@@ -14,6 +14,9 @@ VALID_TABLES = {
     "alembic_version",
 }
 
+# Import secret redaction utility
+from utils.secret_redaction import redact_url_credentials as redact_url_credentials
+
 
 def validate_table_name(table_name):
     """Validate table name against whitelist.
@@ -448,8 +451,12 @@ def transfer(source_url, skip_items):
         click.echo("   Update DATABASE_URL in .env to your new database first.")
         return
 
-    click.echo(f"📦 Source (old): {source_url}")
-    click.echo(f"📦 Target (current): {DATABASE_URL}")
+    # Redact credentials before printing
+    redacted_source = redact_url_credentials(source_url)
+    redacted_target = redact_url_credentials(DATABASE_URL)
+    
+    click.echo(f"📦 Source (old): {redacted_source}")
+    click.echo(f"📦 Target (current): {redacted_target}")
 
     # Connect to source
     source_engine = create_engine(source_url)

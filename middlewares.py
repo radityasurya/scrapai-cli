@@ -245,6 +245,22 @@ class SmartProxyMiddleware:
             spider.state = {}
         spider.state["proxy_type_used"] = self.proxy_mode
 
+        # Also save to separate metadata file for safer reading
+        try:
+            from pathlib import Path
+            import json
+            import os
+            
+            # Get checkpoint directory from spider settings
+            job_dir = spider.settings.get("JOBDIR")
+            if job_dir:
+                metadata_path = Path(job_dir) / "crawl_metadata.json"
+                metadata = {"proxy_type_used": self.proxy_mode}
+                with open(metadata_path, "w") as f:
+                    json.dump(metadata, f)
+        except Exception:
+            pass  # Ignore errors in metadata writing
+
         if self.proxy_available:
             logger.info(
                 f"🕷️  Spider '{spider.name}' started - Smart proxy mode enabled"

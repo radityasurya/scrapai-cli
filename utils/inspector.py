@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 
 from core.config import DATA_DIR
 from settings import USER_AGENT
+from utils.url_validation import validate_url_ssrf
 
 
 async def inspect_page_async(
@@ -48,6 +49,13 @@ async def inspect_page_async(
     Returns:
         dict: Analysis results
     """
+    # Validate URL for SSRF protection
+    try:
+        url = validate_url_ssrf(url)
+    except ValueError as e:
+        print(f"❌ Invalid URL: {e}")
+        return None
+
     print(f"Inspecting: {url}")
     if mode == "browser":
         print("Using CloakBrowser (JS rendering + Cloudflare bypass)...")

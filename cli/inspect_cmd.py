@@ -1,6 +1,10 @@
 import click
 import sys
 import logging
+import os
+import subprocess
+
+from utils.url_validation import validate_url_ssrf
 
 
 @click.command()
@@ -44,15 +48,23 @@ def inspect_cmd(
     logger = logging.getLogger("inspector")
     logger.info(f"Starting inspection of {url}")
 
+    # Validate URL for SSRF protection
+    try:
+        validated_url = validate_url_ssrf(url)
+        logger.info(f"URL validated: {validated_url}")
+    except ValueError as e:
+        click.echo(f"❌ Invalid URL: {e}")
+        sys.exit(1)
+
     if browser:
         click.echo("🌐 Using CloakBrowser (headed mode, JS + Cloudflare bypass)")
-        _run_browser_inspect(url, project, output_dir, proxy_type, no_save_html)
+        _run_browser_inspect(validated_url, project, output_dir, proxy_type, no_save_html)
     else:
         click.echo("⚡ Using lightweight HTTP fetch")
         from utils.inspector import inspect_page
 
         inspect_page(
-            url, output_dir, proxy_type, not no_save_html, mode="http", project=project
+            validated_url, output_dir, proxy_type, not no_save_html, mode="http", project=project
         )
 
     logger.info("Inspection complete")
@@ -63,11 +75,15 @@ def _run_browser_inspect(url, project, output_dir, proxy_type, no_save_html):
 
     Wraps with xvfb-run on headless servers automatically.
     """
-    import os
-    import subprocess
+    # Validate URL for SSRF protection (double-check for subprocess call)
+    try:
+        validated_url = validate_url_ssrf(url)
+    except ValueError as e:
+        click.echo(f"❌ Invalid URL: {e}")
+        sys.exit(1)
 
     # Build subprocess command: python -m utils.inspector <url> --browser ...
-    cmd = [sys.executable, "-m", "utils.inspector", url, "--browser"]
+    cmd = [sys.executable, "-m", "utils.inspector", validated_url, "--browser"]
     cmd += ["--project", project]
     if output_dir:
         cmd += ["--output-dir", output_dir]

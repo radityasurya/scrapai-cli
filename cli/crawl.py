@@ -3,7 +3,7 @@ import subprocess
 import sys
 import os
 import shutil
-import pickle
+import json
 import shlex
 from pathlib import Path
 from datetime import datetime
@@ -252,12 +252,12 @@ def _run_spider(
             click.echo("✓ Dupefilter cleared - crawl will resume properly")
 
         # Check if proxy type changed and clear checkpoint if needed
-        state_file = Path(checkpoint_dir) / "spider.state"
-        if state_file.exists():
+        metadata_file = Path(checkpoint_dir) / "crawl_metadata.json"
+        if metadata_file.exists():
             try:
-                with open(state_file, "rb") as f:
-                    state = pickle.load(f)
-                    old_proxy = state.get("proxy_type_used")
+                with open(metadata_file, "r") as f:
+                    metadata = json.load(f)
+                    old_proxy = metadata.get("proxy_type_used")
 
                     if old_proxy and old_proxy != proxy_type:
                         click.echo(
@@ -268,9 +268,9 @@ def _run_spider(
                         )
                         shutil.rmtree(checkpoint_dir)
                         click.echo("♻️  Starting fresh crawl")
-            except Exception as e:
-                # If we can't read state file, just continue (checkpoint might be corrupted)
-                click.echo(f"⚠️  Could not read checkpoint state: {e}")
+            except (json.JSONDecodeError, KeyError, Exception) as e:
+                # If we can't read metadata file, just continue (checkpoint might be corrupted)
+                click.echo(f"⚠️  Could not read checkpoint metadata: {e}")
                 click.echo("   Continuing with existing checkpoint")
 
         cmd.extend(["-s", f"JOBDIR={checkpoint_dir}"])

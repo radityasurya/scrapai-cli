@@ -14,6 +14,7 @@ Features:
 
 import os
 import sys
+import shlex
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -202,9 +203,9 @@ def create_spider_dag(spider):
         crawl_task = BashOperator(
             task_id='crawl_spider',
             bash_command=f"""
-            cd {SCRAPAI_PATH} && \
+            cd {shlex.quote(str(SCRAPAI_PATH))} && \
             source .venv/bin/activate && \
-            ./scrapai crawl {spider.name} --project {project} --timeout 28800
+            ./scrapai crawl {shlex.quote(spider.name)} --project {shlex.quote(project)} --timeout 28800
             """,
             # Graceful stop at 8h (28800s), hard kill at 9h as fallback
             execution_timeout=timedelta(hours=9),
@@ -214,9 +215,9 @@ def create_spider_dag(spider):
         verify_task = BashOperator(
             task_id='verify_results',
             bash_command=f"""
-            cd {SCRAPAI_PATH} && \
+            cd {shlex.quote(str(SCRAPAI_PATH))} && \
             source .venv/bin/activate && \
-            ./scrapai show {spider.name} --project {project} --limit 5
+            ./scrapai show {shlex.quote(spider.name)} --project {shlex.quote(project)} --limit 5
             """,
             execution_timeout=timedelta(minutes=5),
         )
