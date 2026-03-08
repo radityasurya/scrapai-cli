@@ -1,0 +1,9 @@
+certifi==2026.1.4
+charset-normalizer==3.4.4
+gallery_dl==1.31.7
+idna==3.11
+imageio-ffmpeg==0.6.0
+pip==25.1.1
+requests==2.32.5
+urllib3==2.6.3
+yt-dlp==2026.2.21

@@ -71,17 +71,27 @@ jobs:
 
     - name: Check for security vulnerabilities
       run: |
-        safety check --json || true
+        safety check --json --output safety-report.json
+      continue-on-error: true
 
     - name: Run bandit security scan
       run: |
-        bandit -r core spiders cli handlers utils -f json -o bandit-report.json || true
+        bandit -r core spiders cli handlers utils -f json -o bandit-report.json
+      continue-on-error: true
+
+    - name: Check security scan results
+      run: |
+        echo "Checking for HIGH severity issues..."
+        if [ -f bandit-report.json ]; then
+          python3 -c "import json; data=json.load(open('bandit-report.json')); high=[r for r in data.get('results',[]) if r.get('issue_severity')=='HIGH']; print(f'Found {len(high)} HIGH severity issues') if high else None; exit(1) if high else None"
+        fi
 
     - name: Upload security reports
       uses: actions/upload-artifact@v4
       with:
         name: security-reports
         path: |
+          safety-report.json
           bandit-report.json
 
   code-quality:
