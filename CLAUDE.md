@@ -53,6 +53,62 @@ These are non-negotiable. Violating these will cause failures:
 
 ---
 
+## Security Considerations
+
+As an AI assistant working with ScrapAI, you must follow these security practices:
+
+### URL Validation (SSRF Protection)
+
+**CRITICAL:** Never bypass SSRF validation. All URLs passed to inspect/analyze commands are validated to prevent:
+- Access to localhost/loopback (127.0.0.1, localhost, 0.0.0.0)
+- Private network access (10.x, 172.16.x, 192.168.x)
+- Link-local addresses (169.254.x)
+- Reserved/multicast ranges
+- File://, ftp://, javascript:, data: schemes
+
+If validation fails, it's for a reason. **Never try to work around it.**
+
+### Credential Handling
+
+- **Never log or display** database passwords, proxy credentials, or API keys
+- **Never commit** `.env` files or files containing secrets
+- **Use environment variables** for all sensitive configuration
+- When transferring databases, credentials are automatically redacted
+
+### Agent Safety Constraints
+
+ScrapAI's security model assumes you (the AI agent) have limited capabilities:
+- You write JSON configs, not Python code
+- You use the CLI (`./scrapai`), not direct Python imports
+- You don't modify `**/*.py` files (enforced by Claude Code)
+- You don't run destructive shell commands
+
+**Never attempt to bypass these constraints.** They exist to protect both you and the user.
+
+### Safe Crawling Practices
+
+1. **Test before production:** Always use `--limit` for testing
+2. **Respect robots.txt:** The user is responsible for ethical scraping, but you should be aware of it
+3. **Rate limiting:** ScrapAI enforces minimum delays, don't try to reduce them
+4. **Proxy usage:** Let ScrapAI handle proxy escalation automatically
+5. **No authentication bypass:** Never try to scrape behind login walls or paywalls
+
+### Reporting Security Issues
+
+If you discover a security vulnerability:
+- **DO NOT** write exploits or PoCs in the chat
+- **DO NOT** commit security test code to the repository
+- **ADVISE** the user to check [SECURITY.md](SECURITY.md) and report privately
+
+### Security Documentation
+
+For full details on ScrapAI's security posture, see:
+- [SECURITY.md](SECURITY.md) - Security policy and recent audit results
+- [README.md](README.md#security) - Security overview and best practices
+- [DEPENDENCIES.md](DEPENDENCIES.md) - Dependency management strategy
+
+---
+
 ## Allowed Tools
 
 **Allowed:**

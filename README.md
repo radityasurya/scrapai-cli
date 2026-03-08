@@ -233,12 +233,30 @@ ScrapAI doesn't replace developers. It removes the repetitive parts so you can f
 
 ## Security
 
+ScrapAI takes security seriously, especially when pairing AI agents with web scraping capabilities.
+
+### Recent Security Audit (March 2026)
+
+**✅ All Critical Vulnerabilities Resolved**
+
+- **Command Injection** - Fixed in Airflow DAG tasks (all user input safely quoted)
+- **Unsafe Deserialization** - Replaced pickle with JSON in checkpoint handling
+- **SSRF Vulnerabilities** - URL inspection commands now validate against private IPs/localhost
+- **Credential Exposure** - Database credentials redacted in CLI output
+- **Insecure Defaults** - Airflow setup requires explicit admin credentials
+- **CI Security** - Security scans fail on HIGH severity issues
+
+See [SECURITY.md](SECURITY.md) for full details and our security policy.
+
+### Input Validation
+
 All input is validated through [Pydantic](https://docs.pydantic.dev/) schemas before it touches the database or the crawler:
 
 - **Spider configs:** strict schema validation (`extra="forbid"`), spider names restricted to `^[a-zA-Z0-9_-]+$`, callback names validated with reserved names blocked
-- **URLs:** HTTP/HTTPS only, private IP and localhost blocking (127.0.0.1, 10.x, 172.16.x, 192.168.x, 169.254.x), 2048-char limit
+- **URLs:** HTTP/HTTPS only, SSRF protection (blocks localhost, private IPs 10.x/172.16.x/192.168.x/169.254.x, loopback, link-local, reserved ranges), 2048-char limit
 - **Settings:** whitelisted extractor names, bounded concurrency (1-32), bounded delays (0-60s)
 - **SQL:** all queries through SQLAlchemy ORM with parameterized bindings; `db query` validates table names against a whitelist; UPDATE/DELETE require row count confirmation
+- **Secrets:** credential redaction in logs/output, no hardcoded credentials, environment-based configuration
 
 ### Agent Safety
 
@@ -253,7 +271,21 @@ ScrapAI's approach: **the agent writes config, not code.**
 
 The hard enforcement (allow/deny lists) is a Claude Code feature configured via `./scrapai setup`. Other agents get instructions but not enforcement. Only Claude Code guarantees the agent can't sidestep it. For autonomous operation, we pair this with NanoClaw's container isolation. See [COMPARISON.md](COMPARISON.md#ai-agents--scraping-the-security-question) for the full analysis.
 
-Found a vulnerability? See [SECURITY.md](SECURITY.md). Do not use public GitHub issues.
+### Security Best Practices
+
+When deploying ScrapAI:
+
+1. **Environment Variables** - Never commit `.env` files. Use `.env.example` as a template
+2. **Database Credentials** - Use strong passwords and connection pooling in production
+3. **Proxy Credentials** - Rotate proxy passwords regularly, use dedicated service accounts
+4. **Airflow Security** - Change default admin credentials immediately, enable authentication
+5. **Network Isolation** - Run ScrapAI in isolated networks, restrict outbound access where possible
+6. **Regular Updates** - Keep dependencies updated, monitor security advisories
+7. **Access Control** - Limit who can run crawl commands and access scraped data
+
+### Reporting Security Issues
+
+Found a vulnerability? See [SECURITY.md](SECURITY.md). **Do not use public GitHub issues.**
 
 ## CLI Reference
 
