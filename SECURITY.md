@@ -1,6 +1,66 @@
 # Security Policy
 
+## Recent Security Improvements
+
+### Injection Vulnerabilities (Command Injection)
+**Status**: ✅ FIXED
+- **Fixed in**: Airflow DAG tasks (`airflow/dags/scrapai_spider_dags.py`)
+- **Method**: All user-controlled values now use `shlex.quote()`
+- **Severity**: Critical
+- **Impact**: Remote code execution on Airflow workers
+- **CVE**: N/A (internal fix)
+
+- **Commit**: d9b212f
+
+### Unsafe Deserialization (Pickle)
+**Status**: ✅ FIXED
+- **Fixed in**: Checkpoint metadata handling (`cli/crawl.py`)
+- **Method**: Replaced `pickle.load()` with JSON
+- **Severity**: High
+- **Impact**: Local code execution if attacker can write checkpoint files
+- **CVE**: N/A (internal fix)
+- **Commit**: fa1850d
+
+### SSRF Vulnerabilities
+**Status**: ✅ FIXED
+- **Fixed in**: URL inspection commands (`cli/inspect_cmd.py`, `utils/inspector.py`)
+- **Method**: Added URL validation for localhost/private IPs
+- **Severity**: High
+- **Impact**: Internal network access, metadata service leakage
+- **CVE**: N/A (internal fix)
+- **Commit**: fa1850d
+
+### Sensitive Data Exposure (Credentials)
+**Status**: ✅ FIXED
+- **Fixed in**: Database transfer output (`cli/db.py`)
+- **Method**: Redact passwords from connection strings
+- **Severity**: Medium
+- **Impact**: Credential leakage in logs
+- **CVE**: N/A (internal fix)
+- **Commit**: fa1850d
+
+### Insecure Defaults (Admin Credentials)
+**Status**: ✅ FIXED
+- **Fixed in**: Airflow Docker setup (`docker-compose.airflow.yml`)
+- **Method**: Removed admin/admin defaults, require explicit credentials
+- **Severity**: High
+- **Impact**: Unauthorized access to Airflow UI
+- **CVE**: N/A (internal fix)
+- **Commit**: d9b212f
+
+## Current Security Posture
+
+After the security audit, the following improvements have been implemented:
+
+1. **Shell Injection Protection**: All user-controlled values in shell commands are safely quoted
+2. **Safe Deserialization**: Pickle deserialization replaced with JSON
+3. **SSRF Protection**: URL inspection commands validate URLs before fetching
+4. **Credential Redaction**: Database credentials are redacted in CLI output
+5. **Secure Defaults**: Airflow setup requires explicit admin credentials
+6. **CI Security Enforcement**: Security scans fail on HIGH severity issues
+
 ## Reporting a Vulnerability
+
 
 **Please DO NOT report security vulnerabilities through public GitHub issues.**
 
