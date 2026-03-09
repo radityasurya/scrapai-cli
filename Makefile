@@ -93,6 +93,18 @@ clean:
 	find . -type f -name ".coverage" -delete
 	find . -type f -name "coverage.xml" -delete
 
+# Git hooks
+hooks-install:
+	pre-commit install
+	pre-commit install --hook-type pre-push
+	@echo "✓ Git hooks installed!"
+
+hooks-run:
+	pre-commit run --all-files
+
+hooks-update:
+	pre-commit autoupdate
+
 # Quick pre-commit check
 pre-commit: format-check lint test-unit
 	@echo "✓ Pre-commit checks passed!"

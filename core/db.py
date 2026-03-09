@@ -1,14 +1,13 @@
 import os
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker, scoped_session, DeclarativeBase
+
 from dotenv import load_dotenv
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import DeclarativeBase, scoped_session, sessionmaker
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-if not DATABASE_URL:
-    DATABASE_URL = "sqlite:///scrapai.db"
+_raw_database_url = os.getenv("DATABASE_URL")
+DATABASE_URL: str = _raw_database_url if _raw_database_url else "sqlite:///scrapai.db"
 
 engine = create_engine(DATABASE_URL)
 
@@ -23,11 +22,11 @@ def set_sqlite_pragma(dbapi_conn, connection_record):
         cursor.close()
 
 
-def is_postgres():
+def is_postgres() -> bool:
     return "postgresql" in DATABASE_URL or "postgres" in DATABASE_URL
 
 
-def is_sqlite():
+def is_sqlite() -> bool:
     return "sqlite" in DATABASE_URL
 
 

@@ -36,6 +36,7 @@ Built by [DiscourseLab](https://www.discourselab.ai/). Used in production across
 - [Configuration](#configuration)
 - [Limitations](#limitations)
 - [Documentation](#documentation)
+- [Development](#development)
 - [Contributing](#contributing)
 - [Responsible Use](#responsible-use)
 - [License](#license)

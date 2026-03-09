@@ -13,6 +13,13 @@ black>=24.0.0
 flake8>=7.0.0
 mypy>=1.8.0
 bandit>=1.7.0
+isort>=5.13.0
 
 # Security scanning
 safety>=3.0.0
+
+# Git hooks
+pre-commit>=3.6.0
+
+# Type stubs
+types-redis>=4.6.0
