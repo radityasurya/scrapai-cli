@@ -1,8 +1,13 @@
-import click
-import subprocess
-import sys
 import os
 import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import click
+
+from utils.secret_redaction import redact_url_credentials as redact_url_credentials
 
 # Whitelist of valid table names (prevents SQL injection)
 VALID_TABLES = {
@@ -11,11 +16,12 @@ VALID_TABLES = {
     "crawl_queue",
     "spider_rules",
     "spider_settings",
+    "crawl_runs",
+    "api_keys",
+    "webhook_subscriptions",
+    "webhook_deliveries",
     "alembic_version",
 }
-
-# Import secret redaction utility
-from utils.secret_redaction import redact_url_credentials as redact_url_credentials
 
 
 def validate_table_name(table_name):
@@ -26,9 +32,7 @@ def validate_table_name(table_name):
     """
     if table_name not in VALID_TABLES:
         valid_list = ", ".join(sorted(VALID_TABLES))
-        raise ValueError(
-            f"Invalid table name: '{table_name}'\n" f"Valid tables: {valid_list}"
-        )
+        raise ValueError(f"Invalid table name: '{table_name}'\nValid tables: {valid_list}")
 
 
 def is_postgresql():
@@ -45,6 +49,27 @@ def is_sqlite():
     return "sqlite" in str(engine.url)
 
 
+def _get_alembic_command():
+    """Resolve the Alembic executable for the current Python environment."""
+    python_path = Path(sys.executable)
+    candidates = [
+        python_path.with_name("alembic"),
+        python_path.with_name("alembic.exe"),
+    ]
+
+    for candidate in candidates:
+        if candidate.exists():
+            return [str(candidate)]
+
+    fallback = shutil.which("alembic")
+    if fallback:
+        return [fallback]
+
+    raise FileNotFoundError(
+        "Alembic executable not found. Run 'python scrapai setup' or install requirements."
+    )
+
+
 @click.group()
 def db():
     """Database management"""
@@ -54,18 +79,18 @@ def db():
 @db.command("migrate")
 def migrate():
     """Run database migrations"""
-    click.echo("🔄 Running database migrations...")
+    click.echo("Running database migrations...")
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            _get_alembic_command() + ["upgrade", "head"],
             cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         )
         if result.returncode == 0:
-            click.echo("✅ Migrations completed successfully!")
+            click.echo("Migrations completed successfully.")
         else:
-            click.echo("❌ Migration failed!")
+            click.echo("Migration failed.")
     except Exception as e:
-        click.echo(f"❌ Error running migrations: {e}")
+        click.echo(f"Error running migrations: {e}")
 
 
 @db.command("current")
@@ -73,18 +98,19 @@ def current():
     """Show current migration revision"""
     try:
         subprocess.run(
-            [sys.executable, "-m", "alembic", "current"],
+            _get_alembic_command() + ["current"],
             cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         )
     except Exception as e:
-        click.echo(f"❌ Error checking current revision: {e}")
+        click.echo(f"Error checking current revision: {e}")
 
 
 @db.command("stats")
 def stats():
     """Show database statistics (counts of spiders, items, queue)"""
-    from core.db import get_db
     from sqlalchemy import text
+
+    from core.db import get_db
 
     try:
         db = next(get_db())
@@ -93,9 +119,7 @@ def stats():
         spider_count = db.execute(text("SELECT COUNT(*) FROM spiders")).scalar()
         item_count = db.execute(text("SELECT COUNT(*) FROM scraped_items")).scalar()
         project_count = db.execute(
-            text(
-                "SELECT COUNT(DISTINCT project) FROM spiders WHERE project IS NOT NULL"
-            )
+            text("SELECT COUNT(DISTINCT project) FROM spiders WHERE project IS NOT NULL")
         ).scalar()
 
         # Queue breakdown
@@ -112,27 +136,36 @@ def stats():
         queue_failed = db.execute(
             text("SELECT COUNT(*) FROM crawl_queue WHERE status = 'failed'")
         ).scalar()
+        spider_count = int(spider_count or 0)
+        item_count = int(item_count or 0)
+        project_count = int(project_count or 0)
+        queue_total = int(queue_total or 0)
+        queue_pending = int(queue_pending or 0)
+        queue_processing = int(queue_processing or 0)
+        queue_completed = int(queue_completed or 0)
+        queue_failed = int(queue_failed or 0)
 
-        click.echo("📊 Database Statistics\n")
+        click.echo("Database Statistics\n")
         click.echo(f"   Spiders: {spider_count:,}")
         click.echo(f"   Scraped Items: {item_count:,}")
         click.echo(f"   Projects: {project_count:,}")
         click.echo(f"\n   Queue Items: {queue_total:,}")
         if queue_total > 0:
-            click.echo(f"      • Pending: {queue_pending:,}")
-            click.echo(f"      • Processing: {queue_processing:,}")
-            click.echo(f"      • Completed: {queue_completed:,}")
-            click.echo(f"      • Failed: {queue_failed:,}")
+            click.echo(f"      - Pending: {queue_pending:,}")
+            click.echo(f"      - Processing: {queue_processing:,}")
+            click.echo(f"      - Completed: {queue_completed:,}")
+            click.echo(f"      - Failed: {queue_failed:,}")
 
     except Exception as e:
-        click.echo(f"❌ Failed to get statistics: {e}")
+        click.echo(f"Error: failed to get statistics: {e}")
 
 
 @db.command("tables")
 def tables():
     """List all tables with row counts"""
-    from core.db import get_db
     from sqlalchemy import text
+
+    from core.db import get_db
 
     try:
         db = next(get_db())
@@ -159,7 +192,7 @@ def tables():
             click.echo("(no tables found)")
             return
 
-        click.echo("📋 Database Tables\n")
+        click.echo("Database Tables\n")
 
         # Get row count for each table
         max_name_len = max(len(name) for name in table_names)
@@ -168,18 +201,18 @@ def tables():
             try:
                 # Validate table name before using in SQL
                 validate_table_name(table_name)
-                count = db.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar()
+                count = db.execute(
+                    text(f"SELECT COUNT(*) FROM {table_name}")  # nosec B608
+                ).scalar()
                 click.echo(f"   {table_name.ljust(max_name_len)}  {count:,} rows")
             except ValueError:
                 # Invalid table name - skip it
-                click.echo(
-                    f"   {table_name.ljust(max_name_len)}  (skipped: not a ScrapAI table)"
-                )
+                click.echo(f"   {table_name.ljust(max_name_len)}  (skipped: not a ScrapAI table)")
             except Exception as e:
                 click.echo(f"   {table_name.ljust(max_name_len)}  (error: {e})")
 
     except Exception as e:
-        click.echo(f"❌ Failed to list tables: {e}")
+        click.echo(f"Error: failed to list tables: {e}")
 
 
 @db.command("inspect")
@@ -195,19 +228,20 @@ def inspect(table):
     try:
         validate_table_name(table)
     except ValueError as e:
-        click.echo(f"❌ {e}")
+        click.echo(f"Error: {e}")
         return
 
     try:
         db = next(get_db())
         from sqlalchemy import text
 
-        click.echo(f"🔍 Table: {table}\n")
+        click.echo(f"Table: {table}\n")
 
         # Get schema (works for both SQLite and PostgreSQL)
         # Note: table name already validated against whitelist above
         if is_postgresql():
-            result = db.execute(text(f"""
+            result = db.execute(
+                text("""
                 SELECT
                     column_name,
                     data_type,
@@ -215,9 +249,11 @@ def inspect(table):
                     is_nullable,
                     column_default
                 FROM information_schema.columns
-                WHERE table_name = '{table}'
+                WHERE table_name = :table_name
                 ORDER BY ordinal_position
-            """))
+            """),
+                {"table_name": table},
+            )
 
             click.echo("Column                Type                 Nullable  Default")
             click.echo("-" * 70)
@@ -255,17 +291,15 @@ def inspect(table):
                 null_str = "NO" if not_null else "YES"
                 default_str = str(default) if default else ""
 
-                click.echo(
-                    f"{col_name:20}  {data_type:18}  {null_str:8}  {default_str}"
-                )
+                click.echo(f"{col_name:20}  {data_type:18}  {null_str:8}  {default_str}")
 
         # Show row count
         # Note: table name already validated against whitelist above
-        count = db.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
+        count = db.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()  # nosec B608
         click.echo(f"\nTotal rows: {count:,}")
 
     except Exception as e:
-        click.echo(f"❌ Failed to inspect table '{table}': {e}")
+        click.echo(f"Error: failed to inspect table '{table}': {e}")
 
 
 def _build_count_query(sql):
@@ -285,7 +319,7 @@ def _build_count_query(sql):
     if update_match:
         table = update_match.group(1)
         where = update_match.group(2) or ""
-        return f"SELECT COUNT(*) FROM {table} {where}".strip()
+        return f"SELECT COUNT(*) FROM {table} {where}".strip()  # nosec B608
 
     # DELETE FROM <table> [WHERE ...]
     delete_match = re.match(
@@ -296,7 +330,7 @@ def _build_count_query(sql):
     if delete_match:
         table = delete_match.group(1)
         where = delete_match.group(2) or ""
-        return f"SELECT COUNT(*) FROM {table} {where}".strip()
+        return f"SELECT COUNT(*) FROM {table} {where}".strip()  # nosec B608
 
     return None
 
@@ -328,17 +362,13 @@ def _format_results(rows, result, format, json_lib):
                 col_widths[i] = max(col_widths[i], len(str(val)))
 
         # Print header
-        header = " | ".join(
-            str(col).ljust(width) for col, width in zip(columns, col_widths)
-        )
+        header = " | ".join(str(col).ljust(width) for col, width in zip(columns, col_widths))
         click.echo(header)
         click.echo("-" * len(header))
 
         # Print rows
         for row in rows:
-            click.echo(
-                " | ".join(str(val).ljust(width) for val, width in zip(row, col_widths))
-            )
+            click.echo(" | ".join(str(val).ljust(width) for val, width in zip(row, col_widths)))
 
         click.echo(f"\n({len(rows)} rows)")
 
@@ -369,14 +399,15 @@ def query(sql, format, yes):
       ./scrapai db query "DELETE FROM scraped_items WHERE spider_id = 5"
       ./scrapai db query "SELECT COUNT(*) FROM scraped_items" --format json
     """
-    from core.db import get_db
     import json as json_lib
+
+    from core.db import get_db
 
     # Safety check - only allow SELECT, UPDATE, DELETE
     sql_upper = sql.strip().upper()
     allowed_prefixes = ("SELECT", "UPDATE", "DELETE")
     if not any(sql_upper.startswith(prefix) for prefix in allowed_prefixes):
-        click.echo("❌ Only SELECT, UPDATE, and DELETE queries are allowed")
+        click.echo("Error: only SELECT, UPDATE, and DELETE queries are allowed")
         click.echo("   INSERT, DROP, ALTER, and TRUNCATE are blocked for safety")
         return
 
@@ -401,7 +432,8 @@ def query(sql, format, yes):
 
             if not yes:
                 click.echo(
-                    f"⚠️  This will {op} {affected} row(s). Continue? [y/N] ", nl=False
+                    f"Warning: this will {op} {affected} row(s). Continue? [y/N] ",
+                    nl=False,
                 )
                 confirm = click.getchar()
                 click.echo()  # newline after input
@@ -411,7 +443,9 @@ def query(sql, format, yes):
 
             result = db.execute(text(sql))
             db.commit()
-            click.echo(f"✅ {op} complete — {result.rowcount} row(s) affected")
+            rowcount_value = getattr(result, "rowcount", None)
+            rowcount = "unknown" if rowcount_value is None else str(rowcount_value)
+            click.echo(f"{op} complete - {rowcount} row(s) affected")
 
         else:
             result = db.execute(text(sql))
@@ -419,7 +453,7 @@ def query(sql, format, yes):
             _format_results(rows, result, format, json_lib)
 
     except Exception as e:
-        click.echo(f"❌ Query failed: {e}")
+        click.echo(f"Error: query failed: {e}")
 
 
 @db.command("transfer")
@@ -443,20 +477,21 @@ def transfer(source_url, skip_items):
     """
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    from core.db import SessionLocal, Base, DATABASE_URL
-    from core.models import Spider, SpiderRule, SpiderSetting, ScrapedItem, CrawlQueue
+
+    from core.db import DATABASE_URL, Base, SessionLocal
+    from core.models import CrawlQueue, ScrapedItem, Spider, SpiderRule, SpiderSetting
 
     if source_url == DATABASE_URL:
-        click.echo("❌ Source is the same as current database.")
+        click.echo("Error: source is the same as current database.")
         click.echo("   Update DATABASE_URL in .env to your new database first.")
         return
 
     # Redact credentials before printing
     redacted_source = redact_url_credentials(source_url)
     redacted_target = redact_url_credentials(DATABASE_URL)
-    
-    click.echo(f"📦 Source (old): {redacted_source}")
-    click.echo(f"📦 Target (current): {redacted_target}")
+
+    click.echo(f"Source (old): {redacted_source}")
+    click.echo(f"Target (current): {redacted_target}")
 
     # Connect to source
     source_engine = create_engine(source_url)
@@ -471,7 +506,7 @@ def transfer(source_url, skip_items):
     try:
         # Transfer spiders with rules and settings
         spiders = source.query(Spider).all()
-        click.echo(f"\n🕷️  Transferring {len(spiders)} spiders...")
+        click.echo(f"\nTransferring {len(spiders)} spiders...")
 
         spider_id_map = {}
         for s in spiders:
@@ -513,20 +548,18 @@ def transfer(source_url, skip_items):
                     )
                 )
 
-        click.echo(f"   ✅ {len(spiders)} spiders (with rules and settings)")
+        click.echo(f"   OK: {len(spiders)} spiders (with rules and settings)")
 
         # Transfer scraped items
         if not skip_items:
             item_count = source.query(ScrapedItem).count()
-            click.echo(f"\n📰 Transferring {item_count} scraped items...")
+            click.echo(f"\nTransferring {item_count} scraped items...")
 
             batch_size = 1000
             transferred = 0
             for spider_id_old, spider_id_new in spider_id_map.items():
                 items = (
-                    source.query(ScrapedItem)
-                    .filter(ScrapedItem.spider_id == spider_id_old)
-                    .all()
+                    source.query(ScrapedItem).filter(ScrapedItem.spider_id == spider_id_old).all()
                 )
                 for item in items:
                     target.add(
@@ -546,13 +579,13 @@ def transfer(source_url, skip_items):
                         target.flush()
                         click.echo(f"   ... {transferred}/{item_count}")
 
-            click.echo(f"   ✅ {transferred} items")
+            click.echo(f"   OK: {transferred} items")
         else:
-            click.echo("\n⏭️  Skipping scraped items (--skip-items)")
+            click.echo("\nSkipping scraped items (--skip-items)")
 
         # Transfer queue
         queue_items = source.query(CrawlQueue).all()
-        click.echo(f"\n📋 Transferring {len(queue_items)} queue items...")
+        click.echo(f"\nTransferring {len(queue_items)} queue items...")
 
         for q in queue_items:
             target.add(
@@ -570,14 +603,14 @@ def transfer(source_url, skip_items):
                 )
             )
 
-        click.echo(f"   ✅ {len(queue_items)} queue items")
+        click.echo(f"   OK: {len(queue_items)} queue items")
 
         target.commit()
-        click.echo("\n🎉 Transfer complete! Your new database is ready.")
+        click.echo("\nTransfer complete. Your new database is ready.")
 
     except Exception as e:
         target.rollback()
-        click.echo(f"\n❌ Transfer failed: {e}")
+        click.echo(f"\nError: transfer failed: {e}")
         raise
     finally:
         source.close()

@@ -1,15 +1,17 @@
 from datetime import datetime, timezone
+
 from sqlalchemy import (
-    Column,
-    Integer,
-    String,
+    JSON,
     Boolean,
+    Column,
     DateTime,
     ForeignKey,
+    Integer,
+    String,
     Text,
-    JSON,
 )
 from sqlalchemy.orm import relationship
+
 from .db import Base
 
 
@@ -32,15 +34,9 @@ class Spider(Base):
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
-    rules = relationship(
-        "SpiderRule", back_populates="spider", cascade="all, delete-orphan"
-    )
-    settings = relationship(
-        "SpiderSetting", back_populates="spider", cascade="all, delete-orphan"
-    )
-    items = relationship(
-        "ScrapedItem", back_populates="spider", cascade="all, delete-orphan"
-    )
+    rules = relationship("SpiderRule", back_populates="spider", cascade="all, delete-orphan")
+    settings = relationship("SpiderSetting", back_populates="spider", cascade="all, delete-orphan")
+    items = relationship("ScrapedItem", back_populates="spider", cascade="all, delete-orphan")
 
 
 class SpiderRule(Base):
@@ -79,8 +75,9 @@ class ScrapedItem(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     spider_id = Column(Integer, ForeignKey("spiders.id"), nullable=False)
+    crawl_run_id = Column(Integer, ForeignKey("crawl_runs.id"), nullable=True, index=True)
 
-    url = Column(String, unique=True, index=True, nullable=False)
+    url = Column(String, index=True, nullable=False)
     title = Column(String, nullable=True)
     content = Column(Text, nullable=True)
     published_date = Column(DateTime, nullable=True)
@@ -89,6 +86,7 @@ class ScrapedItem(Base):
     metadata_json = Column(JSON, nullable=True)
 
     spider = relationship("Spider", back_populates="items")
+    crawl_run = relationship("CrawlRun", backref="items")
 
 
 class CrawlQueue(Base):
@@ -107,3 +105,79 @@ class CrawlQueue(Base):
     created_at = Column(DateTime, nullable=False, default=_utcnow)
     updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
     completed_at = Column(DateTime, nullable=True)
+
+
+class CrawlRun(Base):
+    __tablename__ = "crawl_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project = Column(String(255), nullable=False, default="default")
+    spider_id = Column(Integer, ForeignKey("spiders.id"), nullable=False)
+    trigger_source = Column(String(50), nullable=False, default="cli")
+    trigger_actor = Column(String(255), nullable=True)
+    status = Column(String(50), nullable=False, default="queued")
+    requested_limit = Column(Integer, nullable=True)
+    output_mode = Column(String(50), nullable=False, default="db")
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    error_message = Column(Text, nullable=True)
+    items_scraped = Column(Integer, nullable=True, default=0)
+    metadata_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+    updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+
+    spider = relationship("Spider", backref="crawl_runs")
+
+    @property
+    def duration_seconds(self) -> int:
+        if self.started_at and self.finished_at:
+            delta = self.finished_at - self.started_at
+            return int(delta.total_seconds())
+        return 0
+
+
+class APIKey(Base):
+    __tablename__ = "api_keys"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    key_hash = Column(String(64), unique=True, nullable=False, index=True)
+    project = Column(String(255), nullable=True)
+    scopes = Column(JSON, nullable=True, default=list)
+    active = Column(Boolean, default=True, nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
+    revoked_at = Column(DateTime, nullable=True)
+    revoked_by = Column(String(50), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+    updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
+class WebhookSubscription(Base):
+    __tablename__ = "webhook_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project = Column(String(255), nullable=False)
+    target_url = Column(String(500), nullable=False)
+    event_types = Column(JSON, nullable=False)
+    secret = Column(String(255), nullable=False)
+    active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+    updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
+class WebhookDelivery(Base):
+    __tablename__ = "webhook_deliveries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    subscription_id = Column(Integer, ForeignKey("webhook_subscriptions.id"), nullable=False)
+    event_type = Column(String(100), nullable=False)
+    payload = Column(JSON, nullable=False)
+    status = Column(String(50), nullable=False, default="pending")
+    attempt = Column(Integer, default=0)
+    delivered_at = Column(DateTime, nullable=True)
+    response_status = Column(Integer, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+    updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+
+    subscription = relationship("WebhookSubscription", backref="deliveries")
