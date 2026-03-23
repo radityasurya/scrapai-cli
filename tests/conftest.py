@@ -15,7 +15,7 @@ from typing import Generator
 
 import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from core.models import Base, Spider  # noqa: F401 - used in fixtures
 
@@ -59,7 +59,10 @@ def temp_db(monkeypatch) -> Generator[Session, None, None]:
     def mock_get_db():
         yield session
 
-    monkeypatch.setattr("spiders.database_spider.get_db", mock_get_db)
+    try:
+        monkeypatch.setattr("spiders.database_spider.get_db", mock_get_db)
+    except (ImportError, ModuleNotFoundError):
+        pass
 
     try:
         yield session
@@ -127,7 +130,10 @@ def sample_html_simple() -> str:
             </p>
         </header>
         <div class="content">
-            <p>This is the first paragraph of the article content. It contains important information.</p>
+            <p>
+                This is the first paragraph of the article content. It contains
+                important information.
+            </p>
             <p>This is the second paragraph with more details about the topic being discussed.</p>
             <p>The article continues with a third paragraph providing additional context.</p>
         </div>

@@ -1,8 +1,10 @@
-import click
-import sys
+import asyncio
 import logging
 import os
 import subprocess
+import sys
+
+import click
 
 from utils.url_validation import validate_url_ssrf
 
@@ -61,11 +63,21 @@ def inspect_cmd(
         _run_browser_inspect(validated_url, project, output_dir, proxy_type, no_save_html)
     else:
         click.echo("⚡ Using lightweight HTTP fetch")
-        from utils.inspector import inspect_page
+        from services.inspector_service import InspectorService
 
-        inspect_page(
-            validated_url, output_dir, proxy_type, not no_save_html, mode="http", project=project
+        result = asyncio.run(
+            InspectorService().inspect_url(
+                url=validated_url,
+                output_dir=output_dir,
+                proxy_type=proxy_type,
+                save_html=not no_save_html,
+                mode="http",
+                project=project,
+            )
         )
+        if not result["success"]:
+            click.echo(f"❌ Inspection failed: {result['error']}")
+            sys.exit(1)
 
     logger.info("Inspection complete")
 
@@ -93,23 +105,17 @@ def _run_browser_inspect(url, project, output_dir, proxy_type, no_save_html):
         cmd += ["--no-save-html"]
 
     # Auto-wrap with xvfb-run on headless servers (same as crawl.py)
-    from utils.display_helper import needs_xvfb, has_xvfb
+    from utils.display_helper import has_xvfb, needs_xvfb
 
     if needs_xvfb():
         if has_xvfb():
             click.echo("🖥️  Headless server detected - using Xvfb for headed browser")
             cmd = ["xvfb-run", "-a"] + cmd
         else:
-            click.echo(
-                "❌ ERROR: Browser mode requires a display but Xvfb is not installed"
-            )
+            click.echo("❌ ERROR: Browser mode requires a display but Xvfb is not installed")
             click.echo("")
-            click.echo(
-                "Browser runs in HEADED mode (headless=False) for maximum stealth."
-            )
-            click.echo(
-                "On servers without a display, Xvfb provides a virtual framebuffer."
-            )
+            click.echo("Browser runs in HEADED mode (headless=False) for maximum stealth.")
+            click.echo("On servers without a display, Xvfb provides a virtual framebuffer.")
             click.echo("")
             click.echo("Install Xvfb:")
             click.echo("  sudo apt-get update && sudo apt-get install -y xvfb")

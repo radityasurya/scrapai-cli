@@ -15,6 +15,77 @@ Extract custom fields from any structured data - products, jobs, listings, forum
 - News, blogs, documentation
 - Content with title/content/author/date structure
 
+**Use parse_job for:**
+- Job posting detail pages
+- Pages with JobPosting JSON-LD schema
+- Sites where you want automatic extraction without custom selectors
+
+## Built-in Callbacks
+
+### parse_article
+
+Extracts article-style content using newspaper4k and trafilatura. Use for news, blogs, and documentation.
+
+```json
+{
+  "rules": [{"allow": ["/article/.*"], "callback": "parse_article"}]
+}
+```
+
+No `callbacks` config needed - it's built-in.
+
+### parse_job
+
+Extracts job posting data using JSON-LD schema and HTML heuristics. Extracts: title, company, location, description, employment_type, posted_date, closing_date, remote, job_id.
+
+```json
+{
+  "rules": [{"allow": ["/jobs/.*"], "callback": "parse_job"}]
+}
+```
+
+**Extraction order:**
+1. `JobPosting` JSON-LD structured data
+2. HTML heuristics for common job field patterns
+3. Optional custom selectors via `JOB_CUSTOM_SELECTORS` setting
+
+**With custom selectors:**
+```json
+{
+  "rules": [{"allow": ["/jobs/.*"], "callback": "parse_job"}],
+  "settings": {
+    "JOB_CUSTOM_SELECTORS": {
+      "title": "h1.job-title",
+      "company": "span.company-name",
+      "location": "span.location",
+      "description": "div.job-description"
+    }
+  }
+}
+```
+
+**Listing to detail flow:**
+```json
+{
+  "callbacks": {
+    "parse_job_listing": {
+      "iterate": {
+        "selector": "article.job-card",
+        "follow": {
+          "url": {"css": "a::attr(href)"},
+          "callback": "parse_job"
+        }
+      },
+      "extract": {
+        "listing_salary": {"css": "span.salary::text"}
+      }
+    }
+  }
+}
+```
+
+The listing fields are merged with the job detail fields from `parse_job`.
+
 ## Basic Structure
 
 ```json

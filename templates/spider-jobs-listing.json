@@ -1,0 +1,37 @@
+{
+  "name": "example_jobs_listing",
+  "source_url": "https://jobs.example.com",
+  "allowed_domains": ["jobs.example.com"],
+  "start_urls": ["https://jobs.example.com/jobs"],
+  "rules": [
+    {
+      "allow": ["/jobs\\?page=\\d+"],
+      "callback": "parse_job_listing",
+      "follow": true
+    }
+  ],
+  "callbacks": {
+    "parse_job_listing": {
+      "iterate": {
+        "selector": "article.job-card",
+        "follow": {
+          "url": {"css": "a.job-link::attr(href)"},
+          "callback": "parse_job"
+        },
+        "url_context": {
+          "department": {"regex": "/jobs/([^/]+)/"}
+        }
+      },
+      "extract": {
+        "listing_salary": {
+          "css": "span.salary::text",
+          "processors": [{"type": "strip"}]
+        },
+        "listing_posted": {
+          "css": "span.posted-date::text",
+          "processors": [{"type": "strip"}]
+        }
+      }
+    }
+  }
+}

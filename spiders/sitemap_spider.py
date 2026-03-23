@@ -1,11 +1,14 @@
-from scrapy.spiders import SitemapSpider
-from core.db import get_db
-from core.models import Spider
-from .base import BaseDBSpiderMixin
-from dateutil import parser as dateutil_parser
-from datetime import datetime, timedelta
 import logging
 import re
+from datetime import datetime, timedelta
+
+from dateutil import parser as dateutil_parser
+from scrapy.spiders import SitemapSpider
+
+from core.db import get_db
+from core.models import Spider
+
+from .base import BaseDBSpiderMixin
 
 logger = logging.getLogger(__name__)
 
@@ -67,16 +70,16 @@ class SitemapDatabaseSpider(BaseDBSpiderMixin, SitemapSpider):
 
     @classmethod
     def from_crawler(cls, crawler, *args, **kwargs):
-        spider = super(SitemapDatabaseSpider, cls).from_crawler(
-            crawler, *args, **kwargs
-        )
+        spider = super(SitemapDatabaseSpider, cls).from_crawler(crawler, *args, **kwargs)
         cls._apply_cf_to_crawler(spider, crawler)
         return spider
 
     async def parse_article(self, response):
-        async for item in self._extract_article(
-            response, source_label="sitemap_spider"
-        ):
+        async for item in self._extract_article(response, source_label="sitemap_spider"):
+            yield item
+
+    async def parse_job(self, response):
+        async for item in self._extract_job(response, source_label="sitemap_spider"):
             yield item
 
     def _parse_since_date(self):

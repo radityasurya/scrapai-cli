@@ -1,5 +1,6 @@
 """Shared mixin for database-driven spiders."""
 
+import asyncio
 import json
 import logging
 import re
@@ -58,9 +59,7 @@ class BaseDBSpiderMixin:
             curl_cffi_enabled = spider.custom_settings.get("CURL_CFFI_ENABLED", False)
 
             if curl_cffi_enabled:
-                logger.info(
-                    "[from_crawler] Applying curl_cffi handlers to crawler settings"
-                )
+                logger.info("[from_crawler] Applying curl_cffi handlers to crawler settings")
                 crawler.settings.set(
                     "DOWNLOAD_HANDLERS",
                     {
@@ -70,9 +69,7 @@ class BaseDBSpiderMixin:
                     priority="spider",
                 )
             elif cf_enabled:
-                logger.info(
-                    "[from_crawler] Applying Cloudflare handlers to crawler settings"
-                )
+                logger.info("[from_crawler] Applying Cloudflare handlers to crawler settings")
                 crawler.settings.set(
                     "DOWNLOAD_HANDLERS",
                     {
@@ -113,9 +110,7 @@ class BaseDBSpiderMixin:
 
         from core.extractors import SmartExtractor
 
-        extractor = SmartExtractor(
-            strategies=strategies, custom_selectors=custom_selectors
-        )
+        extractor = SmartExtractor(strategies=strategies, custom_selectors=custom_selectors)
 
         logger.info(f"Processing {response.url} (Length: {len(response.text)})")
         title_hint = response.css("title::text").get()
@@ -164,6 +159,35 @@ class BaseDBSpiderMixin:
             self._items_scraped += 1
         else:
             logger.warning(f"Failed to extract article from {response.url}")
+
+    async def _extract_job(self, response, source_label="database_spider"):
+        """Shared job extraction logic."""
+        from core.extractors import JobExtractor
+
+        logger.info(f"Trying job extractor for {response.url}")
+
+        title_hint = response.css("title::text").get()
+        include_html = self.settings.getbool("INCLUDE_HTML_IN_OUTPUT", False)
+
+        job = await asyncio.to_thread(
+            JobExtractor().extract,
+            response.url,
+            response.text,
+            title_hint,
+            include_html,
+        )
+
+        if job:
+            item = job.model_dump()
+            item["spider_name"] = self.spider_name
+            item["spider_id"] = self.spider_config.id
+            item["source"] = source_label
+
+            yield item
+
+            self._items_scraped += 1
+        else:
+            logger.warning(f"Failed to extract job from {response.url}")
 
     def _extract_field(self, selector, config):
         """Extract a single field using CSS or XPath selector.
@@ -302,14 +326,10 @@ class BaseDBSpiderMixin:
             # Extract url_context once per page
             url_context = {}
             if url_context_config:
-                url_context = self._extract_url_context(
-                    response.url, url_context_config
-                )
+                url_context = self._extract_url_context(response.url, url_context_config)
 
             rows = response.css(row_selector)
-            logger.info(
-                f"Iterate {callback_name}: found {len(rows)} rows on {response.url}"
-            )
+            logger.info(f"Iterate {callback_name}: found {len(rows)} rows on {response.url}")
 
             for row in rows:
                 # Extract per-row fields
@@ -352,9 +372,7 @@ class BaseDBSpiderMixin:
 
             extract_config = callback_config.get("extract") or {}
             if not extract_config:
-                logger.warning(
-                    f"Callback {callback_name} has no extraction config, skipping"
-                )
+                logger.warning(f"Callback {callback_name} has no extraction config, skipping")
                 return
 
             # Build the item with custom fields

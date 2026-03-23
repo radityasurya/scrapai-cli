@@ -2,6 +2,8 @@
 
 **For complete documentation, refer to: `CLAUDE.md`**
 
+**Project workflow note:** planning belongs in `RULES.md` and the Obsidian Kanban workspace, not in repo docs drafts.
+
 This file previously contained duplicate instructions. All agent guidance has been consolidated into CLAUDE.md to ensure consistency across all AI assistants (Claude Code, Cursor, Windsurf, Gemini, etc.).
 
 ## Quick Reference

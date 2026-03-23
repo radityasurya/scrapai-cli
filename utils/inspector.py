@@ -56,7 +56,7 @@ async def inspect_page_async(
         url = validate_url_ssrf(url)
     except ValueError as e:
         print(f"❌ Invalid URL: {e}")
-        return None
+        return {"success": False, "url": url, "error": str(e), "project": project}
 
     print(f"Inspecting: {url}")
     if mode == "browser":
@@ -130,7 +130,14 @@ async def inspect_page_async(
 
             if not html_content:
                 print(f"Failed to fetch page: {url}")
-                return None
+                return {
+                    "success": False,
+                    "url": url,
+                    "project": project,
+                    "mode": mode,
+                    "output_dir": output_dir,
+                    "error": "Failed to fetch page content",
+                }
 
     else:
         # Mode 1: Use lightweight HTTP fetch (default)
@@ -143,17 +150,38 @@ async def inspect_page_async(
                     if response.status != 200:
                         print(f"HTTP {response.status} - {url}")
                         print("Hint: Try --browser for JS-rendered or Cloudflare-protected sites")
-                        return None
+                        return {
+                            "success": False,
+                            "url": url,
+                            "project": project,
+                            "mode": mode,
+                            "output_dir": output_dir,
+                            "error": f"HTTP {response.status}",
+                        }
 
                     html_content = await response.text()
 
         except aiohttp.ClientError as e:
             print(f"Failed to fetch page: {e}")
             print("Hint: Try --browser for JS-rendered or Cloudflare-protected sites")
-            return None
+            return {
+                "success": False,
+                "url": url,
+                "project": project,
+                "mode": mode,
+                "output_dir": output_dir,
+                "error": str(e),
+            }
         except asyncio.TimeoutError:
             print(f"Request timed out: {url}")
-            return None
+            return {
+                "success": False,
+                "url": url,
+                "project": project,
+                "mode": mode,
+                "output_dir": output_dir,
+                "error": "Request timed out",
+            }
 
     # Save the HTML if requested
     if save_html and html_content:
@@ -161,6 +189,8 @@ async def inspect_page_async(
         with open(html_file, "w", encoding="utf-8") as f:
             f.write(html_content)
         print(f"Saved HTML to: {html_file}")
+    else:
+        html_file = None
 
     # Parse and analyze the HTML
     if html_content:
@@ -168,6 +198,26 @@ async def inspect_page_async(
         title = soup.title.text if soup.title else "No title"
         print(f"\nTitle: {title}")
         print(f"HTML size: {len(html_content)} bytes")
+
+        return {
+            "success": True,
+            "url": url,
+            "project": project,
+            "mode": mode,
+            "output_dir": output_dir,
+            "html_file": html_file,
+            "title": title,
+            "html_size": len(html_content),
+        }
+
+    return {
+        "success": False,
+        "url": url,
+        "project": project,
+        "mode": mode,
+        "output_dir": output_dir,
+        "error": "No HTML content returned",
+    }
 
 
 def inspect_page(

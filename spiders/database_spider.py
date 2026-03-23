@@ -1,9 +1,12 @@
+import logging
+
 from scrapy.linkextractors import LinkExtractor
 from scrapy.spiders import CrawlSpider, Rule
+
 from core.db import get_db
 from core.models import Spider
+
 from .base import BaseDBSpiderMixin
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +80,7 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
                     )
                     continue
 
-            self.rules.append(
-                Rule(LinkExtractor(**le_kwargs), callback=callback, follow=r.follow)
-            )
+            self.rules.append(Rule(LinkExtractor(**le_kwargs), callback=callback, follow=r.follow))
 
         # Load settings and CF handlers via mixin
         self._load_settings_from_db(spider)
@@ -117,7 +118,9 @@ class DatabaseSpider(BaseDBSpiderMixin, CrawlSpider):
         return spider
 
     async def parse_article(self, response):
-        async for item in self._extract_article(
-            response, source_label="database_spider"
-        ):
+        async for item in self._extract_article(response, source_label="database_spider"):
+            yield item
+
+    async def parse_job(self, response):
+        async for item in self._extract_job(response, source_label="database_spider"):
             yield item
