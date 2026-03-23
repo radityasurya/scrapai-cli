@@ -1,12 +1,14 @@
-import click
+import json
+import os
+import shlex
+import shutil
 import subprocess
 import sys
-import os
-import shutil
-import json
-import shlex
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
+import click
+
 from core.config import DATA_DIR
 
 
@@ -37,9 +39,7 @@ from core.config import DATA_DIR
     is_flag=True,
     help="Clear DeltaFetch cache to re-crawl all URLs",
 )
-@click.option(
-    "--save-html", is_flag=True, help="Save raw HTML in output (makes files larger)"
-)
+@click.option("--save-html", is_flag=True, help="Save raw HTML in output (makes files larger)")
 def crawl(
     spider,
     project,
@@ -76,11 +76,7 @@ def crawl_all(project, limit):
     from core.models import Spider
 
     db = next(get_db())
-    spiders = (
-        db.query(Spider)
-        .filter(Spider.project == project, Spider.active.is_(True))
-        .all()
-    )
+    spiders = db.query(Spider).filter(Spider.project == project, Spider.active.is_(True)).all()
 
     if not spiders:
         click.echo(f"❌ No active spiders found for project '{project}'")
@@ -90,12 +86,10 @@ def crawl_all(project, limit):
     click.echo(f"🕷️  Spiders: {', '.join(s.name for s in spiders)}")
 
     for s in spiders:
-        click.echo(f"\n{'='*50}")
+        click.echo(f"\n{'=' * 50}")
         click.echo(f"Running: {s.name}")
-        click.echo(f"{'='*50}")
-        _run_spider(
-            project, s.name, None, limit, None, "auto", False, None, False, False
-        )
+        click.echo(f"{'=' * 50}")
+        _run_spider(project, s.name, None, limit, None, "auto", False, None, False, False)
 
 
 def _run_spider(
@@ -118,8 +112,13 @@ def _run_spider(
     db_spider = db.query(Spider).filter(Spider.name == spider_name).first()
 
     if not db_spider:
+        db.close()
         click.echo(f"❌ Spider '{spider_name}' not found in database.")
         return
+
+    # Extract all needed info from db_spider before closing the connection
+    spider_settings = list(db_spider.settings) if db_spider.settings else []
+    db.close()
 
     click.echo(f"🚀 Running DB spider: {spider_name}")
 
@@ -134,13 +133,9 @@ def _run_spider(
 
         if deltafetch_db.exists():
             deltafetch_db.unlink()
-            click.echo(
-                f"🔄 DeltaFetch cache cleared for '{spider_name}' - will re-crawl all URLs"
-            )
+            click.echo(f"🔄 DeltaFetch cache cleared for '{spider_name}' - will re-crawl all URLs")
         else:
-            click.echo(
-                f"ℹ️  No DeltaFetch cache found for '{spider_name}' (already clean)"
-            )
+            click.echo(f"ℹ️  No DeltaFetch cache found for '{spider_name}' (already clean)")
 
         # Also clear checkpoint when resetting (otherwise dupefilter has old state)
         if project_name:
@@ -162,8 +157,8 @@ def _run_spider(
     # Check if browser mode enabled (CLI flag or spider setting)
     cf_enabled = browser  # CLI flag takes precedence
     use_sitemap = False
-    if db_spider.settings:
-        for setting in db_spider.settings:
+    if spider_settings:
+        for setting in spider_settings:
             if setting.key in ["CLOUDFLARE_ENABLED", "BROWSER_ENABLED"] and str(
                 setting.value
             ).lower() in [
@@ -205,9 +200,7 @@ def _run_spider(
     # Enable browser mode if --browser flag used
     if browser:
         cmd.extend(["-s", "CLOUDFLARE_ENABLED=True"])
-        click.echo(
-            "🌐 Browser mode enabled (CloakBrowser with JS rendering + CF bypass)"
-        )
+        click.echo("🌐 Browser mode enabled (CloakBrowser with JS rendering + CF bypass)")
 
     # HTML storage configuration
     if save_html:
@@ -229,9 +222,7 @@ def _run_spider(
 
         # Enable checkpoint for production crawls
         if project_name:
-            checkpoint_dir = str(
-                Path(DATA_DIR) / project_name / spider_name / "checkpoint"
-            )
+            checkpoint_dir = str(Path(DATA_DIR) / project_name / spider_name / "checkpoint")
         else:
             checkpoint_dir = str(Path(DATA_DIR) / spider_name / "checkpoint")
 
@@ -241,12 +232,8 @@ def _run_spider(
         requests_queue = list(Path(checkpoint_dir).glob("requests.queue*"))
 
         if requests_seen.exists() and not requests_queue:
-            click.echo(
-                "⚠️  Detected corrupted checkpoint (dupefilter persisted but queue empty)"
-            )
-            click.echo(
-                "   This is a known Scrapy bug: URLs marked seen but never crawled"
-            )
+            click.echo("⚠️  Detected corrupted checkpoint (dupefilter persisted but queue empty)")
+            click.echo("   This is a known Scrapy bug: URLs marked seen but never crawled")
             click.echo("   Clearing dupefilter to allow re-discovery...")
             requests_seen.unlink()
             click.echo("✓ Dupefilter cleared - crawl will resume properly")
@@ -260,11 +247,10 @@ def _run_spider(
                     old_proxy = metadata.get("proxy_type_used")
 
                     if old_proxy and old_proxy != proxy_type:
+                        click.echo(f"⚠️  Proxy type changed: {old_proxy} → {proxy_type}")
                         click.echo(
-                            f"⚠️  Proxy type changed: {old_proxy} → {proxy_type}"
-                        )
-                        click.echo(
-                            f"🗑️  Clearing checkpoint to ensure all URLs retried with {proxy_type} proxy"
+                            "🗑️  Clearing checkpoint to ensure all URLs retried "
+                            f"with {proxy_type} proxy"
                         )
                         shutil.rmtree(checkpoint_dir)
                         click.echo("♻️  Starting fresh crawl")
@@ -292,9 +278,7 @@ def _run_spider(
                 timestamp = now.strftime("%d%m%Y")  # Just date, no time
 
                 if project_name:
-                    output_dir = str(
-                        Path(DATA_DIR) / project_name / spider_name / "crawls"
-                    )
+                    output_dir = str(Path(DATA_DIR) / project_name / spider_name / "crawls")
                 else:
                     output_dir = str(Path(DATA_DIR) / spider_name / "crawls")
 
@@ -303,9 +287,7 @@ def _run_spider(
 
                 # Check if file already exists (multiple crawls on same day will append)
                 if Path(output_file).exists():
-                    click.echo(
-                        f"📝 Appending to existing file for today: {output_file}"
-                    )
+                    click.echo(f"📝 Appending to existing file for today: {output_file}")
                 else:
                     click.echo(f"📝 Creating new file: {output_file}")
 
@@ -332,7 +314,7 @@ def _run_spider(
     if cf_enabled:
         # CloakBrowser visible by default (easier debugging)
         # On headless servers: use Xvfb or set CLOUDFLARE_HEADLESS=true
-        from utils.display_helper import needs_xvfb, has_xvfb
+        from utils.display_helper import has_xvfb, needs_xvfb
 
         if needs_xvfb():
             if has_xvfb():
@@ -341,16 +323,10 @@ def _run_spider(
                 )
                 cmd = ["xvfb-run", "-a"] + cmd
             else:
-                click.echo(
-                    "❌ ERROR: Browser mode requires a display but Xvfb is not installed"
-                )
+                click.echo("❌ ERROR: Browser mode requires a display but Xvfb is not installed")
                 click.echo("")
-                click.echo(
-                    "Browser runs in HEADED mode (headless=False) for maximum stealth."
-                )
-                click.echo(
-                    "On servers without a display, Xvfb provides a virtual framebuffer."
-                )
+                click.echo("Browser runs in HEADED mode (headless=False) for maximum stealth.")
+                click.echo("On servers without a display, Xvfb provides a virtual framebuffer.")
                 click.echo("")
                 click.echo("Fix options:")
                 click.echo("  1. Install Xvfb (recommended):")
@@ -400,7 +376,7 @@ def _run_spider(
                     output_file,
                     s3_key=s3_key,
                     compress=True,
-                    delete_after_upload=False,  # Keep local copy
+                    delete_after_upload=True,
                 )
 
                 if success:

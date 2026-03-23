@@ -399,7 +399,8 @@ Use when user explicitly requests queue operations. See [docs/queue.md](docs/que
 ./scrapai queue bulk <file> --project <name> [--priority N]
 ./scrapai queue list --project <name> [--status pending|processing|completed|failed] [--count] [--all] [--limit N]
 ./scrapai queue next --project <name>
-./scrapai queue complete|fail|retry|remove <id>
+./scrapai queue complete <id> [--spider <name>]  # verifies spider in DB + final_spider.json on disk
+./scrapai queue fail|retry|remove <id>
 ./scrapai queue cleanup --completed|--failed|--all --force --project <name>
 ```
 
@@ -507,6 +508,28 @@ Advanced (if hybrid fails - rare):
   "CONCURRENT_REQUESTS": 1
 }
 ```
+
+**curl_cffi (TLS fingerprint impersonation):**
+
+Use when a site blocks Scrapy/Twisted at the TLS level (e.g. returns 403/empty despite normal headers). Impersonates Chrome's TLS handshake — no browser needed, fast.
+
+```json
+{
+  "CURL_CFFI_ENABLED": true,
+  "EXTRACTOR_ORDER": ["newspaper", "trafilatura"]
+}
+```
+
+Optional settings:
+```json
+{
+  "CURL_CFFI_ENABLED": true,
+  "CURL_CFFI_IMPERSONATE": "chrome",  // default: "chrome"
+  "CURL_CFFI_TIMEOUT": 30             // default: 30 seconds
+}
+```
+
+**When to use:** Site blocks standard HTTP but doesn't need JS rendering. Try this before reaching for `CLOUDFLARE_ENABLED` (lighter, faster, no browser).
 
 **DeltaFetch (incremental crawling):** See [docs/deltafetch.md](docs/deltafetch.md).
 

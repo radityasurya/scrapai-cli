@@ -14,13 +14,14 @@ Usage:
     python -m utils.inspector https://example.com/fact-checks
 """
 
-import os
 import argparse
 import asyncio
-import aiohttp
+import os
 from pathlib import Path
-from bs4 import BeautifulSoup
 from urllib.parse import urlparse
+
+import aiohttp
+from bs4 import BeautifulSoup
 
 from core.config import DATA_DIR
 from settings import USER_AGENT
@@ -40,7 +41,8 @@ async def inspect_page_async(
 
     Args:
         url (str): URL to inspect
-        output_dir (str): Directory to save analysis and HTML. If None, a directory is created based on the domain
+        output_dir (str): Directory to save analysis and HTML. If None, a
+            directory is created based on the domain
         proxy_type (str): Proxy type to use (unused now, browser handles this)
         save_html (bool): Whether to save the full HTML
         mode (str): Fetch mode - 'http' (default) or 'browser' (CloakBrowser for JS + Cloudflare)
@@ -89,9 +91,7 @@ async def inspect_page_async(
                 )
             else:
                 # Fallback if pattern doesn't match
-                output_dir = str(
-                    Path(DATA_DIR) / project / "web_archive_org" / "analysis"
-                )
+                output_dir = str(Path(DATA_DIR) / project / "web_archive_org" / "analysis")
         else:
             source_id = domain.replace(".", "_")
             output_dir = str(Path(DATA_DIR) / project / source_id / "analysis")
@@ -107,7 +107,25 @@ async def inspect_page_async(
         # Always headed mode (headless=False) for best stealth
         from utils.cf_browser import CloudflareBrowserClient
 
-        async with CloudflareBrowserClient(headless=False) as browser:
+        # Build full escalation chain: direct → datacenter → residential
+        # Inspector always auto-escalates silently - no user approval needed
+        proxy_chain = [None]  # Start with direct connection
+
+        dc_user = os.getenv("DATACENTER_PROXY_USERNAME")
+        dc_pass = os.getenv("DATACENTER_PROXY_PASSWORD")
+        dc_host = os.getenv("DATACENTER_PROXY_HOST")
+        dc_port = os.getenv("DATACENTER_PROXY_PORT")
+        if all([dc_user, dc_pass, dc_host, dc_port]):
+            proxy_chain.append(f"http://{dc_user}:{dc_pass}@{dc_host}:{dc_port}")
+
+        res_user = os.getenv("RESIDENTIAL_PROXY_USERNAME")
+        res_pass = os.getenv("RESIDENTIAL_PROXY_PASSWORD")
+        res_host = os.getenv("RESIDENTIAL_PROXY_HOST")
+        res_port = os.getenv("RESIDENTIAL_PROXY_PORT")
+        if all([res_user, res_pass, res_host, res_port]):
+            proxy_chain.append(f"http://{res_user}:{res_pass}@{res_host}:{res_port}")
+
+        async with CloudflareBrowserClient(headless=False, proxy_chain=proxy_chain) as browser:
             html_content = await browser.fetch(url)
 
             if not html_content:
@@ -121,14 +139,10 @@ async def inspect_page_async(
             headers = {"User-Agent": USER_AGENT}
 
             async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    url, headers=headers, timeout=timeout
-                ) as response:
+                async with session.get(url, headers=headers, timeout=timeout) as response:
                     if response.status != 200:
                         print(f"HTTP {response.status} - {url}")
-                        print(
-                            "Hint: Try --browser for JS-rendered or Cloudflare-protected sites"
-                        )
+                        print("Hint: Try --browser for JS-rendered or Cloudflare-protected sites")
                         return None
 
                     html_content = await response.text()
@@ -178,28 +192,20 @@ def inspect_page(
     Returns:
         dict: Analysis results
     """
-    return asyncio.run(
-        inspect_page_async(url, output_dir, proxy_type, save_html, mode, project)
-    )
+    return asyncio.run(inspect_page_async(url, output_dir, proxy_type, save_html, mode, project))
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Inspect a page to help with creating a scraper"
-    )
+    parser = argparse.ArgumentParser(description="Inspect a page to help with creating a scraper")
     parser.add_argument("url", type=str, help="URL to inspect")
-    parser.add_argument(
-        "--output-dir", type=str, default=None, help="Directory to save analysis"
-    )
+    parser.add_argument("--output-dir", type=str, default=None, help="Directory to save analysis")
     parser.add_argument(
         "--proxy-type",
         choices=["none", "static", "residential", "auto"],
         default="auto",
         help="Proxy type to use",
     )
-    parser.add_argument(
-        "--no-save-html", action="store_true", help="Do not save the full HTML"
-    )
+    parser.add_argument("--no-save-html", action="store_true", help="Do not save the full HTML")
     parser.add_argument(
         "--browser", action="store_true", help="Use CloakBrowser for JS + Cloudflare"
     )
