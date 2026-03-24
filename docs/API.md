@@ -9,7 +9,7 @@ ScrapAI now includes a REST API for programmatic access to spiders, crawls, and 
 ### 1. Install Dependencies
 
 ```bash
-pip install -r requirements.txt
+uv sync --group dev
 ```
 
 ### 2. Configure Environment
@@ -43,10 +43,19 @@ alembic upgrade head
 
 ```bash
 # Development mode with auto-reload
-uvicorn api.main:app --reload
+uv run python -m uvicorn api.main:app --reload
 
 # Production mode
-uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 4
+uv run python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+Useful local commands:
+
+```bash
+uv run python scrapai db migrate
+uv run python -m uvicorn api.main:app --reload
+uv run python -m dramatiq apps.web_api.workers.worker
+uv run python scrapai apikey create joinremotes --project joinremotes
 ```
 
 ### 5. Access API Documentation

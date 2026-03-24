@@ -152,8 +152,18 @@ Our contribution is the orchestration: the CLI, the database-first spider manage
 ```bash
 git clone https://github.com/discourselab/scrapai-cli.git
 cd scrapai-cli
+uv sync --group dev
 ./scrapai setup
 ./scrapai verify
+```
+
+If you prefer a Python-native dev workflow, `uv` is the recommended runner:
+
+```bash
+uv run python scrapai db migrate
+uv run python -m uvicorn api.main:app --reload
+uv run python -m dramatiq apps.web_api.workers.worker
+uv run python scrapai apikey create joinremotes --project joinremotes
 ```
 
 `./scrapai setup` creates the virtual environment, installs dependencies (including browser drivers), initializes SQLite, and configures permissions. One command, about 2 minutes.
@@ -361,6 +371,14 @@ S3_BUCKET=scrapai-crawls
 ```
 
 **Switching to PostgreSQL:** Update `DATABASE_URL` in `.env`, run `./scrapai db migrate`, then `./scrapai db transfer sqlite:///scrapai.db` to migrate existing data.
+
+For API/webhook development with PostgreSQL and Redis, the equivalent `uv` commands are:
+
+```bash
+uv run python scrapai db migrate
+uv run python -m uvicorn api.main:app --reload
+uv run python -m dramatiq apps.web_api.workers.worker
+```
 
 ## Limitations
 
