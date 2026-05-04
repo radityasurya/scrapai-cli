@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from core.models import APIKey, Spider
+from services.analyzer_service import AnalyzerService
+from services.inspector_service import InspectorService
 from services.spider_analysis_service import SpiderAnalysisService
 from services.spider_import_service import SpiderImportService
 from services.spider_service import SpiderService
@@ -49,6 +51,36 @@ class SpiderAnalyzeRequest(BaseModel):
     """Request payload for spider analysis."""
 
     url: str
+    project: Optional[str] = None
+    use_browser: bool = False
+
+
+class SpiderInspectRequest(BaseModel):
+    """Request payload for fetching a page's HTML."""
+
+    url: str
+    project: Optional[str] = None
+    use_browser: bool = False
+
+
+class SpiderInspectResponse(BaseModel):
+    """Response for page inspection."""
+
+    success: bool
+    url: str
+    project: str
+    mode: str
+    html_file: Optional[str] = None
+    title: Optional[str] = None
+    html_size: Optional[int] = None
+    error: Optional[str] = None
+
+
+class SpiderTestSelectorRequest(BaseModel):
+    """Request payload for testing a CSS selector against a page."""
+
+    url: str
+    selector: str
     project: Optional[str] = None
     use_browser: bool = False
 
@@ -217,6 +249,110 @@ async def get_spider_by_name(
         )
 
     return _build_spider_detail(spider)
+
+
+@router.post("/inspect", response_model=SpiderInspectResponse)
+async def inspect_url(
+    payload: SpiderInspectRequest,
+    api_key: APIKey = Depends(get_api_key),
+):
+    """Fetch and save a page's HTML for selector testing."""
+    project = resolve_project(payload.project, api_key)
+    ensure_project_access(api_key, project)
+
+    service = InspectorService()
+    result = await service.inspect_url(
+        url=payload.url,
+        project=project,
+        mode="browser" if payload.use_browser else "http",
+    )
+
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Inspection failed"))
+
+    return result
+
+
+@router.post("/test-selector")
+async def test_selector(
+    payload: SpiderTestSelectorRequest,
+    api_key: APIKey = Depends(get_api_key),
+):
+    """Fetch a page and test a CSS selector against it. Returns matched elements."""
+    project = resolve_project(payload.project, api_key)
+    ensure_project_access(api_key, project)
+
+    inspector = InspectorService()
+    inspect_result = await inspector.inspect_url(
+        url=payload.url,
+        project=project,
+        mode="browser" if payload.use_browser else "http",
+    )
+
+    if not inspect_result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=inspect_result.get("error", "Failed to fetch page"),
+        )
+
+    html_file = inspect_result.get("html_file")
+    if not html_file:
+        raise HTTPException(status_code=400, detail="No HTML file saved during inspection")
+
+    analyzer = AnalyzerService()
+    result = await analyzer.test_selector(html_path=html_file, selector=payload.selector)
+    result["html_file"] = html_file
+    result["url"] = payload.url
+    return result
+
+
+@router.get("/{spider_id}/config")
+async def get_spider_config(
+    spider_id: int,
+    db: Session = Depends(get_db_session),
+    api_key: APIKey = Depends(get_api_key),
+):
+    """Return the full raw JSON config for a spider, ready for editing and re-importing."""
+    import json as _json
+
+    spider = db.query(Spider).filter(Spider.id == spider_id).first()
+    if not spider:
+        raise HTTPException(status_code=404, detail=f"Spider {spider_id} not found")
+
+    ensure_project_access(api_key, cast(Any, spider).project)
+    item = cast(Any, spider)
+
+    rules = []
+    for rule in item.rules or []:
+        r = cast(Any, rule)
+        rule_dict: Dict[str, Any] = {}
+        if r.allow_patterns:
+            rule_dict["allow"] = r.allow_patterns
+        if r.deny_patterns:
+            rule_dict["deny"] = r.deny_patterns
+        if r.callback:
+            rule_dict["callback"] = r.callback
+        if r.follow is not None:
+            rule_dict["follow"] = r.follow
+        rules.append(rule_dict)
+
+    settings: Dict[str, Any] = {}
+    for setting in item.settings or []:
+        s = cast(Any, setting)
+        settings[s.key] = _json.loads(s.value) if s.type == "json" else s.value
+
+    config: Dict[str, Any] = {
+        "name": item.name,
+        "source_url": item.source_url,
+        "allowed_domains": item.allowed_domains or [],
+        "start_urls": item.start_urls or [],
+        "rules": rules,
+        "settings": settings,
+    }
+    if item.callbacks_config:
+        config["callbacks"] = item.callbacks_config
+
+    return config
 
 
 @router.get("/{spider_id}", response_model=SpiderDetailResponse)

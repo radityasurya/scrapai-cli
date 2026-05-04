@@ -4,6 +4,8 @@
 
 ScrapAI now includes a REST API for programmatic access to spiders, crawls, and scraped data.
 
+> **Downstream consumer integrations:** see [`joinremotes.md`](joinremotes.md) for the joinremotes.com consumer contract — required `metadata` fields, URL patterns, webhook signature format, and a TomTom worked example.
+
 ## Quick Start
 
 ### 1. Install Dependencies

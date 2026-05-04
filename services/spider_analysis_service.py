@@ -4,7 +4,9 @@ Spider analysis service for analyzing URLs and generating spider configurations.
 Provides ATS platform detection and confidence scoring.
 """
 
+import json
 import logging
+import os
 import re
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from urllib.parse import urlparse
@@ -15,6 +17,65 @@ if TYPE_CHECKING:
     from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
+
+_ANALYZE_PROMPT = """You are an expert web scraping engineer.
+Analyze the HTML below from a job board and generate a production-ready Scrapy spider config JSON.
+
+URL: {url}
+Domain: {domain}
+
+HTML (condensed):
+{html}
+
+Return ONLY valid JSON with this exact structure:
+{{
+  "name": "{suggested_name}",
+  "source_url": "{url}",
+  "allowed_domains": ["{domain}"],
+  "start_urls": ["{url}"],
+  "rules": [
+    {{
+      "allow": ["<regex pattern matching job listing pages>"],
+      "callback": "parse_listing",
+      "follow": true
+    }},
+    {{
+      "allow": ["<regex pattern matching individual job pages>"],
+      "callback": "parse_job",
+      "follow": false
+    }}
+  ],
+  "callbacks": {{
+    "parse_job": {{
+      "extract": {{
+        "job_title": {{"css": "<selector>::text"}},
+        "company": {{"css": "<selector>::text"}},
+        "location": {{"css": "<selector>::text"}},
+        "salary": {{"css": "<selector>::text"}},
+        "description": {{"css": "<selector>"}},
+        "posted_date": {{"css": "<selector>::text"}},
+        "tags": {{"css": "<selector>::text", "get_all": true}}
+      }}
+    }}
+  }},
+  "settings": {{
+    "DOWNLOAD_DELAY": 1.5,
+    "CONCURRENT_REQUESTS": 1
+  }},
+  "_analysis": {{
+    "confidence": <0.0-1.0>,
+    "detected_platform": "<platform name or null>",
+    "warnings": ["<any issues found>"],
+    "job_links_detected": <count>
+  }}
+}}
+
+Rules for selectors:
+- Use ::text for text content, ::attr(href) for links
+- Prefer specific class selectors over generic tags
+- If a field is not present on this page type, omit it
+- If the page is a listing page (not a job detail), focus rules on pagination and job link patterns
+- Only include fields you can actually see in the HTML"""
 
 
 # ATS Platform definitions with URL patterns and template configs
@@ -272,8 +333,7 @@ class SpiderAnalysisService:
         suggested_name: str,
         use_browser: bool,
     ) -> Dict[str, Any]:
-        """Full analysis for unknown sites."""
-        # Fetch HTML
+        """Full analysis for unknown sites. Uses Claude AI if ANTHROPIC_API_KEY is set."""
         html_content = await self._fetch_html(url, use_browser)
 
         if not html_content:
@@ -289,18 +349,15 @@ class SpiderAnalysisService:
         parsed = urlparse(url)
         domain = parsed.netloc.replace("www.", "")
 
-        # Parse HTML
+        if os.getenv("ANTHROPIC_API_KEY"):
+            return await self._analyze_with_ai(url, domain, suggested_name, html_content)
+
+        # Fallback: heuristic analysis
         from bs4 import BeautifulSoup
 
         soup = BeautifulSoup(html_content, "lxml")
-
-        # Analyze page structure
         analysis = self._analyze_structure(soup, url)
-
-        # Generate basic config
         config = self._generate_basic_config(url, domain, suggested_name, soup, analysis)
-
-        # Calculate confidence based on what we found
         confidence_score = self._calculate_confidence(analysis)
         warnings = self._generate_warnings(analysis)
 
@@ -312,6 +369,102 @@ class SpiderAnalysisService:
             "detected_platform": None,
             "confidence_score": confidence_score,
             "warnings": warnings,
+            "analysis": analysis,
+            "suggested_config": config,
+        }
+
+    async def _analyze_with_ai(
+        self,
+        url: str,
+        domain: str,
+        suggested_name: str,
+        html_content: str,
+    ) -> Dict[str, Any]:
+        """Use Claude/GLM to analyze the page and generate a spider config."""
+        try:
+            from bs4 import BeautifulSoup
+
+            # Condense HTML: strip scripts/styles, limit to 12k chars
+            soup = BeautifulSoup(html_content, "lxml")
+            for tag in soup(["script", "style", "noscript", "svg", "img"]):
+                tag.decompose()
+            condensed_html = soup.get_text(separator=" ", strip=True)[:4000]
+            # Also include raw HTML structure (tags + classes) for selector discovery
+            html_structure = str(soup)[:8000]
+            combined = (
+                f"=== TEXT CONTENT ===\n{condensed_html}\n\n"
+                f"=== HTML STRUCTURE ===\n{html_structure}"
+            )
+
+            prompt = _ANALYZE_PROMPT.format(
+                url=url,
+                domain=domain,
+                suggested_name=suggested_name,
+                html=combined,
+            )
+
+            model = os.getenv("SCRAPAI_ANALYZE_MODEL", "glm-4-flash")
+            api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
+            base_url = os.getenv("ANTHROPIC_BASE_URL") or os.getenv(
+                "OPENAI_BASE_URL", "https://api.z.ai/api/paas/v4/"
+            )
+
+            from openai import OpenAI
+
+            client = OpenAI(api_key=api_key, base_url=base_url)
+            message = client.chat.completions.create(
+                model=model,
+                max_tokens=2048,
+                messages=[{"role": "user", "content": prompt}],
+            )
+
+            raw = message.choices[0].message.content.strip()
+            # Strip markdown code fences if present
+            if raw.startswith("```"):
+                raw = re.sub(r"^```[a-z]*\n?", "", raw)
+                raw = re.sub(r"\n?```$", "", raw)
+
+            config = json.loads(raw)
+            ai_analysis = config.pop("_analysis", {})
+
+            return {
+                "success": True,
+                "url": url,
+                "domain": domain,
+                "suggested_name": suggested_name,
+                "detected_platform": ai_analysis.get("detected_platform"),
+                "confidence_score": ai_analysis.get("confidence", 0.75),
+                "warnings": ai_analysis.get("warnings", []),
+                "analysis": {
+                    "title": soup.title.text if soup.title else "Unknown",
+                    "job_links_detected": ai_analysis.get("job_links_detected", 0),
+                    "ai_powered": True,
+                    "model": model,
+                },
+                "suggested_config": config,
+                "analysis_mode": "ai",
+            }
+
+        except json.JSONDecodeError as e:
+            logger.warning(f"AI returned invalid JSON, falling back to heuristic: {e}")
+        except Exception as e:
+            logger.warning(f"AI analysis failed, falling back to heuristic: {e}")
+
+        # Fallback to heuristic on any AI failure
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html_content, "lxml")
+        analysis = self._analyze_structure(soup, url)
+        config = self._generate_basic_config(url, domain, suggested_name, soup, analysis)
+        return {
+            "success": True,
+            "url": url,
+            "domain": domain,
+            "suggested_name": suggested_name,
+            "detected_platform": None,
+            "confidence_score": self._calculate_confidence(analysis),
+            "warnings": self._generate_warnings(analysis)
+            + ["AI analysis unavailable, using heuristic"],
             "analysis": analysis,
             "suggested_config": config,
         }
