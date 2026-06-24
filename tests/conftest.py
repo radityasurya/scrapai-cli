@@ -8,6 +8,7 @@ This module provides:
 - Mock browser clients
 """
 
+import asyncio
 import os
 import tempfile
 from pathlib import Path
@@ -18,6 +19,28 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from core.models import Base, Spider  # noqa: F401 - used in fixtures
+
+
+@pytest.fixture(autouse=True)
+def ensure_legacy_event_loop():
+    """Provide a default event loop for legacy sync tests.
+
+    Python 3.11+ no longer creates a main-thread loop implicitly, while some
+    existing tests still call asyncio.get_event_loop().run_until_complete(...).
+    Keep that compatibility without affecting pytest-asyncio async tests.
+    """
+    created_loop = None
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        created_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(created_loop)
+
+    yield
+
+    if created_loop is not None:
+        created_loop.close()
+        asyncio.set_event_loop(None)
 
 
 @pytest.fixture(scope="session")

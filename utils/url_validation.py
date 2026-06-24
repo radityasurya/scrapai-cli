@@ -9,6 +9,34 @@ import ipaddress
 from urllib.parse import urlparse
 
 
+_DOCUMENTATION_NETWORKS = (
+    ipaddress.ip_network("192.0.2.0/24"),
+    ipaddress.ip_network("198.51.100.0/24"),
+    ipaddress.ip_network("203.0.113.0/24"),
+)
+
+
+def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Return True for SSRF-sensitive IP ranges.
+
+    Python's ipaddress marks RFC 5737 documentation ranges as private in
+    recent versions. Keep those ranges allowed because tests and examples use
+    them as safe, non-routable public stand-ins, while still blocking actual
+    private, localhost, link-local, multicast, unspecified, and reserved ranges.
+    """
+    if any(ip in network for network in _DOCUMENTATION_NETWORKS):
+        return False
+
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
 def validate_url_ssrf(url: str) -> str:
     """
     Validate that a URL does not point to localhost, private IPs, or reserved ranges.
@@ -48,12 +76,7 @@ def validate_url_ssrf(url: str) -> str:
         # Try parsing as IP directly (handles hex, octal, decimal)
         try:
             ip = ipaddress.ip_address(hostname)
-            if (
-                ip.is_private
-                or ip.is_loopback
-                or ip.is_link_local
-                or ip.is_reserved
-            ):
+            if _is_blocked_ip(ip):
                 raise ValueError(
                     f"URL points to private/reserved IP: {url}. "
                     "Blocked to prevent SSRF attacks."
@@ -66,12 +89,7 @@ def validate_url_ssrf(url: str) -> str:
                 results = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC)
                 for family, _, _, _, sockaddr in results:
                     ip = ipaddress.ip_address(sockaddr[0])
-                    if (
-                        ip.is_private
-                        or ip.is_loopback
-                        or ip.is_link_local
-                        or ip.is_reserved
-                    ):
+                    if _is_blocked_ip(ip):
                         raise ValueError(
                             f"URL hostname '{hostname}' resolves to "
                             f"private IP {ip}: {url}. "
