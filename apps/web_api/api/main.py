@@ -73,7 +73,14 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy"}
+    from ..services.redis_config import get_redis_config  # local import to avoid startup failure
+    redis_ok = False
+    try:
+        redis_ok = get_redis_config().health_check()
+    except Exception:
+        pass
+    status = "healthy" if redis_ok else "degraded"
+    return {"status": status, "redis": "ok" if redis_ok else "unavailable"}
 
 
 app.include_router(crawls.router, prefix="/api/v1/crawls", tags=["crawls"])

@@ -1,0 +1,48 @@
+version: "3.9"
+
+services:
+  scrapai-api:
+    build: .
+    command: uv run api
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_DB=${REDIS_DB:-0}
+      - REDIS_PREFIX=${REDIS_PREFIX:-joinremotes:scrapai:prod}
+      - SECRET_KEY=${SECRET_KEY}
+      - API_CORS_ORIGINS=${API_CORS_ORIGINS:-http://localhost:3000}
+    ports:
+      - "${API_PORT:-8481}:8481"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8481/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - joinremotes_network
+    restart: unless-stopped
+
+  scrapai-worker:
+    build: .
+    command: uv run workers
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_DB=${REDIS_DB:-0}
+      - REDIS_PREFIX=${REDIS_PREFIX:-joinremotes:scrapai:prod}
+    depends_on:
+      scrapai-api:
+        condition: service_healthy
+    networks:
+      - joinremotes_network
+    restart: unless-stopped
+
+networks:
+  joinremotes_network:
+    external: true
+    name: ${DOCKER_NETWORK:-joinremotes_default}

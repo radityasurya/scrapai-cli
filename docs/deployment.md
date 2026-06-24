@@ -4,6 +4,7 @@ Production deployment options for ScrapAI.
 
 ## Table of Contents
 
+- [Coolify Deployment (Recommended)](#coolify-deployment-recommended)
 - [Quick Deployment](#quick-deployment)
 - [Docker Deployment](#docker-deployment)
 - [Manual Deployment](#manual-deployment)
@@ -13,6 +14,66 @@ Production deployment options for ScrapAI.
 - [Monitoring & Logging](#monitoring--logging)
 - [Security Hardening](#security-hardening)
 - [Backup & Recovery](#backup--recovery)
+
+## Coolify Deployment (Recommended)
+
+ScrapAI is designed to run on Coolify alongside JoinRemotes, sharing the same Redis and PostgreSQL infrastructure.
+
+### Prerequisites
+
+- Coolify instance running (self-hosted at `https://panel.hireopz.com` or your own)
+- Shared PostgreSQL database already provisioned (same instance used by JoinRemotes)
+- Shared Redis instance already running (same instance used by JoinRemotes)
+- Both services connected to the same Docker network (`joinremotes_default` or configured via `DOCKER_NETWORK`)
+
+### How to Deploy
+
+1. In Coolify, create a new **Docker Compose** service pointing at this repository.
+2. Set the **Compose file** to `docker-compose.prod.yml`.
+3. Set the **environment variables** listed below in the Coolify UI (or `.env`).
+4. Deploy — Coolify will build the image, start `scrapai-api` first (waits for health check), then `scrapai-worker`.
+
+### Required Environment Variables
+
+| Variable | Description | Example |
+|---|---|---|
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://scrapai:pass@db:5432/scrapai` |
+| `REDIS_HOST` | Redis hostname (shared with JoinRemotes) | `redis` |
+| `REDIS_PASSWORD` | Redis password | `your-redis-password` |
+| `SECRET_KEY` | API signing secret (generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`) | `abc123...` |
+| `API_CORS_ORIGINS` | Allowed CORS origins | `https://joinremotes.com` |
+| `DOCKER_NETWORK` | Docker network shared with JoinRemotes | `joinremotes_default` |
+
+Optional variables (have safe defaults):
+
+| Variable | Default | Description |
+|---|---|---|
+| `REDIS_PORT` | `6379` | Redis port |
+| `REDIS_DB` | `0` | Redis database index |
+| `REDIS_PREFIX` | `joinremotes:scrapai:prod` | Namespace prefix for all ScrapAI Redis keys |
+| `API_PORT` | `8481` | Host port the API binds to |
+
+### Verifying the Deployment
+
+Once deployed, verify the API is healthy and Redis is reachable:
+
+```bash
+# From within the JoinRemotes container (on the shared network)
+curl http://scrapai-api:8481/health
+# Expected: {"status":"healthy","redis":"ok"}
+
+# If Redis is temporarily unavailable, you will see:
+# {"status":"degraded","redis":"unavailable"}
+# The API still starts and serves requests — only background jobs are affected.
+```
+
+### Worker Scaling
+
+To increase crawl throughput, scale up the `scrapai-worker` service in Coolify:
+
+- In the Coolify UI, set **Replicas** for `scrapai-worker` to 2, 4, or more.
+- Workers pull jobs from Redis queues, so multiple replicas share the load automatically.
+- The `scrapai-api` service does not need to be scaled — it handles only light API traffic.
 
 ## Quick Deployment
 
