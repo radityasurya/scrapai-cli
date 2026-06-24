@@ -2,6 +2,11 @@
 
 This document is for the AI agent and developers working on the joinremotes.com project. It explains how to set up and use the ScrapAI API to scrape job listings from joinremotes.com and keep them in sync.
 
+For coverage tracking and next steps, also see:
+
+- [`FEATURES.md`](FEATURES.md) — what ScrapAI already covers vs. what remains
+- [`JOURNEYS.md`](JOURNEYS.md) — journey-by-journey cross-check matrix for joinremotes.com
+
 ---
 
 ## What is ScrapAI?

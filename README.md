@@ -392,6 +392,9 @@ The codebase is designed to be extended. The crawling infrastructure is done; wh
 
 | Doc | What it covers |
 |-----|---------------|
+| [docs/FEATURES.md](docs/FEATURES.md) | Feature coverage matrix and what is next, especially for joinremotes.com |
+| [docs/JOURNEYS.md](docs/JOURNEYS.md) | Journey-by-journey cross-check sheet for client integration |
+| [docs/joinremotes.md](docs/joinremotes.md) | joinremotes.com API/result/webhook integration contract |
 | [docs/onboarding.md](docs/onboarding.md) | Setup, troubleshooting, PostgreSQL |
 | [docs/analysis-workflow.md](docs/analysis-workflow.md) | 4-phase workflow for building spiders |
 | [docs/extractors.md](docs/extractors.md) | Extraction chain, custom selectors, Playwright |
