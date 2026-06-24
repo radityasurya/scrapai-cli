@@ -38,6 +38,7 @@ pitch/
 # Output files (but keep example configs)
 *.json
 !templates/**/*.json
+!apps/web_api/openapi.json
 !templates/**/*.md
 !templates/**/*.txt
 templates/**/*.html
