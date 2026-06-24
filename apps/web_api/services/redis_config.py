@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 class RedisConfig:
     """Redis configuration manager with namespace support."""
 
+    CRAWL_LOCK_TTL_SECONDS = 120  # lock expires if heartbeat stops
+
     def __init__(self):
         self.host = os.getenv("REDIS_HOST", "localhost")
         self.port = int(os.getenv("REDIS_PORT", "6379"))
@@ -89,6 +91,40 @@ class RedisConfig:
 
         return self._broker
 
+    def get_lock_key(self, crawl_run_id: int) -> str:
+        """Redis key for per-crawl-run exclusive lock."""
+        return self.get_namespaced_key(f"lock:crawl:{crawl_run_id}")
+
+    def acquire_crawl_lock(self, crawl_run_id: int) -> bool:
+        """Acquire exclusive lock for a crawl run. Returns True if acquired."""
+        try:
+            client = self.get_client()
+            key = self.get_lock_key(crawl_run_id)
+            result = client.set(key, "1", nx=True, ex=self.CRAWL_LOCK_TTL_SECONDS)
+            return result is True
+        except Exception as e:
+            logger.error(f"Failed to acquire lock for crawl run {crawl_run_id}: {e}")
+            return False
+
+    def refresh_crawl_lock(self, crawl_run_id: int) -> bool:
+        """Refresh the TTL of an existing crawl lock. Returns True if key existed."""
+        try:
+            client = self.get_client()
+            key = self.get_lock_key(crawl_run_id)
+            return bool(client.expire(key, self.CRAWL_LOCK_TTL_SECONDS))
+        except Exception as e:
+            logger.error(f"Failed to refresh lock for crawl run {crawl_run_id}: {e}")
+            return False
+
+    def release_crawl_lock(self, crawl_run_id: int) -> None:
+        """Release the crawl lock."""
+        try:
+            client = self.get_client()
+            key = self.get_lock_key(crawl_run_id)
+            client.delete(key)
+        except Exception as e:
+            logger.error(f"Failed to release lock for crawl run {crawl_run_id}: {e}")
+
     def health_check(self) -> bool:
         """Check Redis connection health."""
         try:
@@ -129,3 +165,15 @@ def get_redis_client() -> Redis:
 def get_dramatiq_broker():
     """Get Dramatiq broker."""
     return get_redis_config().get_broker()
+
+
+def acquire_crawl_lock(crawl_run_id: int) -> bool:
+    return get_redis_config().acquire_crawl_lock(crawl_run_id)
+
+
+def refresh_crawl_lock(crawl_run_id: int) -> bool:
+    return get_redis_config().refresh_crawl_lock(crawl_run_id)
+
+
+def release_crawl_lock(crawl_run_id: int) -> None:
+    get_redis_config().release_crawl_lock(crawl_run_id)

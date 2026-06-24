@@ -43,6 +43,7 @@ def workers():
             "dramatiq",
             "apps.web_api.workers.crawl_worker",
             "apps.web_api.workers.webhook_worker",
+            "apps.web_api.workers.reaper",
         ],
         check=True,
     )

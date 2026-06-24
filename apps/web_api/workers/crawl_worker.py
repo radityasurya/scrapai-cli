@@ -9,36 +9,31 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import dramatiq
-from dramatiq.brokers.redis import RedisBroker
-from dramatiq.middleware import Retries
 
 from core.db import SessionLocal
 
 from ..services.crawl_service import CrawlService
-from ..services.redis_config import get_redis_client, get_redis_config
+from ..services.redis_config import (
+    acquire_crawl_lock,
+    get_dramatiq_broker,
+    get_redis_client,
+    get_redis_config,
+    refresh_crawl_lock,
+    release_crawl_lock,
+)
 from ..services.webhook_service import WebhookService
 
 logger = logging.getLogger(__name__)
 
+_broker = get_dramatiq_broker()
 _redis_config = get_redis_config()
-broker = RedisBroker(
-    host=_redis_config.host,
-    port=_redis_config.port,
-    db=_redis_config.db,
-    password=_redis_config.password if _redis_config.password else None,
-    ssl=_redis_config.ssl,
-    middleware=[
-        Retries(max_retries=3, min_backoff=1000, max_backoff=60000),
-    ],
-)
-dramatiq.set_broker(broker)
-
 queue_name = _redis_config.get_queue_name("crawl")
 
 
@@ -58,6 +53,14 @@ def publish_sse_event(redis_client: Any, channel: str, event_type: str, data: di
         logger.error(f"Failed to publish SSE event: {e}")
 
 
+def _heartbeat_loop(crawl_run_id: int, stop_event: threading.Event) -> None:
+    """Refresh the crawl lock TTL every 30s until stop_event is set."""
+    while not stop_event.wait(timeout=30):
+        if not refresh_crawl_lock(crawl_run_id):
+            logger.warning(f"[run={crawl_run_id}] Heartbeat: lock key missing, another worker may have taken over")
+            break
+
+
 @dramatiq.actor(queue_name=queue_name, max_retries=3)
 def crawl_actor(crawl_run_id: int) -> None:
     """
@@ -65,6 +68,21 @@ def crawl_actor(crawl_run_id: int) -> None:
 
     This actor runs the actual Scrapy spider for a crawl run.
     """
+    log_prefix = f"[run={crawl_run_id}]"
+
+    if not acquire_crawl_lock(crawl_run_id):
+        logger.warning(f"{log_prefix} Lock already held — skipping duplicate execution")
+        return
+
+    stop_heartbeat = threading.Event()
+    heartbeat_thread = threading.Thread(
+        target=_heartbeat_loop,
+        args=(crawl_run_id, stop_heartbeat),
+        daemon=True,
+        name=f"heartbeat-{crawl_run_id}",
+    )
+    heartbeat_thread.start()
+
     db = SessionLocal()
     redis_client = get_redis_client()
     channel = f"scrapai:crawl:{crawl_run_id}"
@@ -77,12 +95,12 @@ def crawl_actor(crawl_run_id: int) -> None:
         crawl_run = crawl_service.get_crawl_run(db, crawl_run_id)
 
         if not crawl_run:
-            logger.error(f"Crawl run {crawl_run_id} not found")
+            logger.error(f"{log_prefix} Crawl run not found")
             return
 
         spider = db.query(Spider).filter(Spider.id == crawl_run.spider_id).first()
         if not spider:
-            logger.error(f"Spider {crawl_run.spider_id} not found")
+            logger.error(f"{log_prefix} Spider {crawl_run.spider_id} not found")
             crawl_service.update_crawl_run_status(
                 db, crawl_run_id, "failed", error_message="Spider not found"
             )
@@ -127,7 +145,7 @@ def crawl_actor(crawl_run_id: int) -> None:
         env["SCRAPAI_LOG_LEVEL"] = "INFO"
         env["SCRAPAI_CRAWL_RUN_ID"] = str(crawl_run_id)
 
-        logger.info(f"Starting crawl job {crawl_run_id}: {' '.join(cmd)}")
+        logger.info(f"{log_prefix} Starting crawl job: {' '.join(cmd)}")
 
         start_time = time.time()
 
@@ -171,7 +189,7 @@ def crawl_actor(crawl_run_id: int) -> None:
 
         if process.returncode != 0:
             error_msg = stderr.decode("utf-8", errors="replace")[-2000:]
-            logger.error(f"Crawl job {crawl_run_id} failed: {error_msg}")
+            logger.error(f"{log_prefix} Crawl job failed: {error_msg}")
             assert crawl_service is not None
             crawl_run = crawl_service.update_crawl_run_status(
                 db, crawl_run_id, "failed", error_message=error_msg
@@ -195,7 +213,7 @@ def crawl_actor(crawl_run_id: int) -> None:
             db, crawl_run_id, "completed", items_scraped=items_scraped
         )
 
-        logger.info(f"Crawl job {crawl_run_id} completed in {duration}s, {items_scraped} items")
+        logger.info(f"{log_prefix} Crawl job completed in {duration}s, {items_scraped} items")
 
         publish_sse_event(
             redis_client,
@@ -210,7 +228,7 @@ def crawl_actor(crawl_run_id: int) -> None:
         _trigger_webhooks(crawl_run, "crawl.completed")
 
     except Exception as e:
-        logger.error(f"Crawl job {crawl_run_id} failed with exception: {e}")
+        logger.error(f"{log_prefix} Crawl job failed with exception: {e}")
         try:
             if crawl_service:
                 crawl_service.update_crawl_run_status(
@@ -227,6 +245,9 @@ def crawl_actor(crawl_run_id: int) -> None:
         except Exception:
             pass
     finally:
+        stop_heartbeat.set()
+        heartbeat_thread.join(timeout=5)
+        release_crawl_lock(crawl_run_id)
         db.close()
 
 

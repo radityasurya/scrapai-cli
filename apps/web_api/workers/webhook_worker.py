@@ -12,28 +12,15 @@ from datetime import datetime, timezone
 
 import dramatiq
 import httpx
-from dramatiq.brokers.redis import RedisBroker
-from dramatiq.middleware import Retries
 
 from core.db import SessionLocal
 
-from ..services.redis_config import get_redis_config
+from ..services.redis_config import get_dramatiq_broker, get_redis_config
 
 logger = logging.getLogger(__name__)
 
+_broker = get_dramatiq_broker()
 _redis_config = get_redis_config()
-broker = RedisBroker(
-    host=_redis_config.host,
-    port=_redis_config.port,
-    db=_redis_config.db,
-    password=_redis_config.password if _redis_config.password else None,
-    ssl=_redis_config.ssl,
-    middleware=[
-        Retries(max_retries=5, min_backoff=5000, max_backoff=300000),
-    ],
-)
-dramatiq.set_broker(broker)
-
 queue_name = _redis_config.get_queue_name("webhook")
 
 
