@@ -8,10 +8,12 @@ Status legend: ✅ covered, 🟡 partial, ❌ missing, ⏸️ deferred.
 
 ## Journey summary
 
+Visual reference: [`joinremotes-scrapai-flow.html`](joinremotes-scrapai-flow.html) shows the layman product flow for the JoinRemotes Admin scraper UI.
+
 | # | Journey | Primary actor | Status | Why it matters |
 | --- | --- | --- | --- | --- |
 | 1 | Operator sets up ScrapAI locally/private server | ScrapAI operator | 🟡 Partial | joinremotes needs a reachable API + worker stack before client sync can run. |
-| 2 | Admin analyzes a job-board URL | joinremotes admin / AI agent | ✅ Covered | Converts pasted source URL into a draft spider config. |
+| 2 | Admin analyzes a job-board URL | joinremotes admin / AI agent | ✅ Covered | Admin enters a company careers/job-board URL and gets a draft scrape structure/spider config. |
 | 3 | Admin tests selectors and spider output | joinremotes admin / AI agent | ✅ Covered | Prevents broken sources before they enter production sync. |
 | 4 | Admin creates or updates a source spider | joinremotes admin | ✅ Covered | Persists a reusable scraper for each job source. |
 | 5 | Admin triggers a crawl | joinremotes admin / cron | ✅ Covered | Produces fresh job listings on demand or on schedule. |
@@ -20,6 +22,23 @@ Status legend: ✅ covered, 🟡 partial, ❌ missing, ⏸️ deferred.
 | 8 | ScrapAI notifies joinremotes by webhook | ScrapAI worker -> joinremotes app | ✅ Covered | Completed/failed terminal events now queue signed webhooks; live delivery still belongs in the E2E smoke test. |
 | 9 | Operator monitors, fixes, and retries failures | ScrapAI operator | 🟡 Partial | Health/reporting exists, but production orchestration is still a next step. |
 | 10 | Developer updates contract safely | ScrapAI + joinremotes devs | ❌ Missing | Generated TS types/OpenAPI checks are not implemented yet. |
+
+---
+
+## Product flow — JoinRemotes Admin scraper UI
+
+**Layman goal:** use ScrapAI as the data-filling engine for JoinRemotes. The admin should paste a company job-board/careers URL, let ScrapAI discover the scrape structure, scrape company details and job listings, then preview and import that structured data into JoinRemotes.
+
+| Step | What happens | Covered by | Implementation status |
+| --- | --- | --- | --- |
+| 1 | Admin opens JoinRemotes Admin → Scraper and enters a job-board URL. | Product flow diagram, Journey 2 | ✅ Documented; JoinRemotes UI implementation still needs verification/build. |
+| 2 | JoinRemotes calls ScrapAI analyze API to detect platform/selectors and propose a scrape structure. | `POST /api/v1/spiders/analyze` | ✅ ScrapAI side covered. |
+| 3 | Admin previews/tests sample extraction for company details and jobs. | Inspect/test-selector APIs, Journey 3 | ✅ ScrapAI side covered; UI preview is JoinRemotes-side work. |
+| 4 | Admin saves the approved scrape structure as a reusable source spider. | Spider create/update API, Journey 4 | ✅ ScrapAI side covered. |
+| 5 | Admin or cron starts a crawl. | Crawl API, Journey 5 | ✅ Covered. |
+| 6 | ScrapAI scrapes company profile data and job post data from the source. | Database spider, job schema, result contract | ✅ Core covered; each real source still needs field-quality smoke test. |
+| 7 | JoinRemotes receives clean JSON, previews it, and imports companies/jobs. | Results API/webhook contract, Journey 7/8 | 🟡 Contract covered; actual JoinRemotes import UI and DB sync need verification in JoinRemotes. |
+| 8 | Public JoinRemotes shows fresh company pages and job listings. | JoinRemotes app | 🟡 Downstream implementation/verification. |
 
 ---
 

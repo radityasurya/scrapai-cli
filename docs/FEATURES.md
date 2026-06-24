@@ -9,6 +9,7 @@ Related docs:
 - [`API.md`](API.md) — full REST API reference
 - [`joinremotes.md`](joinremotes.md) — joinremotes.com integration contract and examples
 - [`JOURNEYS.md`](JOURNEYS.md) — journey-by-journey feature coverage
+- [`joinremotes-scrapai-flow.html`](joinremotes-scrapai-flow.html) — visual layman flow for the admin scraper UI
 - [`development.md`](development.md) — local development workflow
 - [`deployment.md`](deployment.md) — deployment notes
 
@@ -66,8 +67,9 @@ Related docs:
 | Deployment | Coolify deployment | ❌ Missing | Plane item #15 Todo | Needs production compose/build config, secrets, health checks, workers, and migration step. |
 | Config | API env vars and CORS | 🟡 Partial | `.env.example`, `docs/API.md`, Plane item #19 Backlog | Env vars exist; code currently uses permissive wildcard CORS; production allowed-origin policy should be finalized for joinremotes. |
 | DX | TypeScript type generation | ❌ Missing | Plane item #20 Backlog | Useful for joinremotes typed client; currently manual contract docs only. |
-| DX | JoinRemotes integration docs | ✅ Covered | `docs/joinremotes.md`, this file, `docs/JOURNEYS.md`, Plane item #21 Done | Repo docs and cross-check matrices are present. |
+| DX | JoinRemotes integration docs | ✅ Covered | `docs/joinremotes.md`, this file, `docs/JOURNEYS.md`, `docs/joinremotes-scrapai-flow.html`, Plane item #21 Done | Repo docs, cross-check matrices, and visual layman flow are present. |
 | Client integration | joinremotes consumer contract | ✅ Covered | `docs/joinremotes.md` | Required metadata fields and webhook contract documented. |
+| Client integration | joinremotes admin scraper UI concept | ✅ Covered as product/docs, 🟡 implementation | `docs/joinremotes-scrapai-flow.html`, `docs/JOURNEYS.md` | Product idea is documented: paste job-board URL, analyze, preview company/jobs, approve import. Actual JoinRemotes UI still needs implementation/verification in the JoinRemotes repo. |
 | Client integration | joinremotes admin source/spider management | 🟡 Partial | API endpoints exist | Need verify actual joinremotes UI routes/client code against this contract. |
 | Client integration | joinremotes crawl/sync flow | 🟡 Partial | `docs/joinremotes.md` | Trigger/poll/webhook/result sync documented; end-to-end production run still needed. |
 

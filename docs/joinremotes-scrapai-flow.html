@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JoinRemotes + ScrapAI Flow</title>
+  <style>
+    :root {
+      --bg: #020617;
+      --panel: #0f172a;
+      --muted: #94a3b8;
+      --text: #e2e8f0;
+      --cyan: #22d3ee;
+      --emerald: #34d399;
+      --violet: #a78bfa;
+      --amber: #fbbf24;
+      --rose: #fb7185;
+      --orange: #fb923c;
+      --slate: #94a3b8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        linear-gradient(rgba(15, 23, 42, 0.45) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(15, 23, 42, 0.45) 1px, transparent 1px),
+        radial-gradient(circle at top left, rgba(34, 211, 238, 0.16), transparent 28rem),
+        radial-gradient(circle at bottom right, rgba(167, 139, 250, 0.12), transparent 28rem),
+        var(--bg);
+      background-size: 40px 40px, 40px 40px, auto, auto, auto;
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      padding: 32px;
+    }
+    .wrap { max-width: 1220px; margin: 0 auto; }
+    .header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+    .pulse { width: 12px; height: 12px; border-radius: 999px; background: var(--emerald); box-shadow: 0 0 0 0 rgba(52, 211, 153, .65); animation: pulse 1.8s infinite; }
+    @keyframes pulse { 70% { box-shadow: 0 0 0 12px rgba(52, 211, 153, 0); } 100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); } }
+    h1 { font-size: 24px; margin: 0; letter-spacing: -0.03em; }
+    .subtitle { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+    .diagram-card {
+      border: 1px solid rgba(148, 163, 184, .24);
+      border-radius: 18px;
+      background: rgba(15, 23, 42, .72);
+      box-shadow: 0 24px 80px rgba(0,0,0,.35);
+      overflow: hidden;
+    }
+    svg { width: 100%; height: auto; display: block; }
+    .node-title { font-size: 14px; font-weight: 700; fill: #f8fafc; }
+    .node-sub { font-size: 10px; fill: #cbd5e1; }
+    .tiny { font-size: 9px; fill: #94a3b8; }
+    .step { font-size: 10px; font-weight: 700; fill: #020617; }
+    .label { font-size: 10px; fill: #cbd5e1; }
+    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 16px; }
+    .card { border: 1px solid rgba(148, 163, 184, .18); border-radius: 14px; background: rgba(15, 23, 42, .72); padding: 16px; }
+    .card h3 { margin: 0 0 10px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .cyan { background: var(--cyan); } .emerald { background: var(--emerald); } .violet { background: var(--violet); }
+    ul { margin: 0; padding-left: 0; list-style: none; color: var(--muted); font-size: 12px; line-height: 1.7; }
+    code { color: #bae6fd; }
+    @media (max-width: 900px) { body { padding: 18px; } .cards { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div class="pulse"></div>
+      <div>
+        <h1>JoinRemotes Admin Scraper Flow</h1>
+        <p class="subtitle">Layman version: you paste a company job board URL in JoinRemotes, ScrapAI visits it, understands the jobs/company, then sends clean data back so JoinRemotes can create/update company profiles and job listings.</p>
+      </div>
+    </div>
+
+    <div class="diagram-card">
+      <svg viewBox="0 0 1180 760" role="img" aria-label="JoinRemotes and ScrapAI scraper flow diagram">
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#64748b" />
+          </marker>
+          <marker id="arrowCyan" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#22d3ee" />
+          </marker>
+          <marker id="arrowEmerald" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#34d399" />
+          </marker>
+          <marker id="arrowAmber" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#fbbf24" />
+          </marker>
+          <marker id="arrowViolet" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#a78bfa" />
+          </marker>
+          <filter id="glow"><feGaussianBlur stdDeviation="2.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+
+        <rect width="1180" height="760" fill="#020617" />
+        <g opacity="0.55">
+          <path d="M0 80 H1180 M0 160 H1180 M0 240 H1180 M0 320 H1180 M0 400 H1180 M0 480 H1180 M0 560 H1180 M0 640 H1180 M0 720 H1180" stroke="#1e293b" stroke-width="1" />
+          <path d="M80 0 V760 M160 0 V760 M240 0 V760 M320 0 V760 M400 0 V760 M480 0 V760 M560 0 V760 M640 0 V760 M720 0 V760 M800 0 V760 M880 0 V760 M960 0 V760 M1040 0 V760 M1120 0 V760" stroke="#1e293b" stroke-width="1" />
+        </g>
+
+        <!-- boundaries -->
+        <rect x="40" y="56" width="360" height="520" rx="14" fill="none" stroke="#22d3ee" stroke-dasharray="8 5" opacity=".55" />
+        <text x="60" y="84" class="label">joinremotes.com admin</text>
+        <rect x="442" y="56" width="330" height="520" rx="14" fill="none" stroke="#34d399" stroke-dasharray="8 5" opacity=".55" />
+        <text x="462" y="84" class="label">ScrapAI API + workers</text>
+        <rect x="816" y="56" width="320" height="520" rx="14" fill="none" stroke="#a78bfa" stroke-dasharray="8 5" opacity=".55" />
+        <text x="836" y="84" class="label">external job board + data store</text>
+
+        <!-- arrows behind nodes -->
+        <path d="M260 190 C350 190 370 140 470 140" fill="none" stroke="#22d3ee" stroke-width="2.5" marker-end="url(#arrowCyan)" />
+        <path d="M610 164 C700 164 735 140 850 140" fill="none" stroke="#fbbf24" stroke-width="2.5" marker-end="url(#arrowAmber)" />
+        <path d="M850 235 C735 235 700 270 610 270" fill="none" stroke="#fbbf24" stroke-width="2.5" marker-end="url(#arrowAmber)" />
+        <path d="M610 305 C700 305 735 350 850 350" fill="none" stroke="#fbbf24" stroke-width="2.5" marker-end="url(#arrowAmber)" />
+        <path d="M850 445 C735 445 700 430 610 430" fill="none" stroke="#fbbf24" stroke-width="2.5" marker-end="url(#arrowAmber)" />
+        <path d="M470 505 C380 505 350 420 260 420" fill="none" stroke="#34d399" stroke-width="2.5" marker-end="url(#arrowEmerald)" />
+        <path d="M260 485 C340 560 450 620 555 620" fill="none" stroke="#a78bfa" stroke-width="2.5" marker-end="url(#arrowViolet)" />
+        <path d="M715 620 C805 620 900 610 980 540" fill="none" stroke="#a78bfa" stroke-width="2.5" marker-end="url(#arrowViolet)" />
+
+        <!-- JoinRemotes nodes -->
+        <g filter="url(#glow)">
+          <rect x="72" y="125" width="188" height="92" rx="10" fill="#0f172a" />
+          <rect x="72" y="125" width="188" height="92" rx="10" fill="rgba(8,51,68,.48)" stroke="#22d3ee" stroke-width="1.5" />
+          <circle cx="96" cy="151" r="13" fill="#22d3ee" /><text x="92" y="155" class="step">1</text>
+          <text x="118" y="151" class="node-title">Scraper UI</text>
+          <text x="92" y="178" class="node-sub">Admin pastes job board URL</text>
+          <text x="92" y="196" class="tiny">Greenhouse, Lever, company careers page, etc.</text>
+        </g>
+
+        <g filter="url(#glow)">
+          <rect x="72" y="370" width="188" height="120" rx="10" fill="#0f172a" />
+          <rect x="72" y="370" width="188" height="120" rx="10" fill="rgba(8,51,68,.48)" stroke="#22d3ee" stroke-width="1.5" />
+          <circle cx="96" cy="396" r="13" fill="#22d3ee" /><text x="92" y="400" class="step">7</text>
+          <text x="118" y="396" class="node-title">Review + Import</text>
+          <text x="92" y="423" class="node-sub">Admin previews clean data</text>
+          <text x="92" y="445" class="tiny">approve / edit / reject</text>
+          <text x="92" y="463" class="tiny">then publish into JoinRemotes</text>
+        </g>
+
+        <!-- ScrapAI nodes -->
+        <g filter="url(#glow)">
+          <rect x="470" y="105" width="140" height="74" rx="10" fill="#0f172a" />
+          <rect x="470" y="105" width="140" height="74" rx="10" fill="rgba(6,78,59,.48)" stroke="#34d399" stroke-width="1.5" />
+          <circle cx="494" cy="129" r="13" fill="#34d399" /><text x="490" y="133" class="step">2</text>
+          <text x="516" y="129" class="node-title">Analyze URL</text>
+          <text x="492" y="154" class="node-sub">Detect platform + selectors</text>
+        </g>
+
+        <g filter="url(#glow)">
+          <rect x="470" y="240" width="140" height="86" rx="10" fill="#0f172a" />
+          <rect x="470" y="240" width="140" height="86" rx="10" fill="rgba(6,78,59,.48)" stroke="#34d399" stroke-width="1.5" />
+          <circle cx="494" cy="265" r="13" fill="#34d399" /><text x="490" y="269" class="step">4</text>
+          <text x="516" y="265" class="node-title">Crawl Jobs</text>
+          <text x="492" y="292" class="node-sub">Visit listings + details</text>
+          <text x="492" y="310" class="tiny">title, location, salary, apply URL</text>
+        </g>
+
+        <g filter="url(#glow)">
+          <rect x="470" y="397" width="140" height="96" rx="10" fill="#0f172a" />
+          <rect x="470" y="397" width="140" height="96" rx="10" fill="rgba(6,78,59,.48)" stroke="#34d399" stroke-width="1.5" />
+          <circle cx="494" cy="422" r="13" fill="#34d399" /><text x="490" y="426" class="step">6</text>
+          <text x="516" y="422" class="node-title">Normalize</text>
+          <text x="492" y="449" class="node-sub">Turn messy pages into</text>
+          <text x="492" y="467" class="tiny">company + job JSON contract</text>
+        </g>
+
+        <!-- External nodes -->
+        <g filter="url(#glow)">
+          <rect x="850" y="105" width="210" height="124" rx="10" fill="#0f172a" />
+          <rect x="850" y="105" width="210" height="124" rx="10" fill="rgba(30,41,59,.60)" stroke="#94a3b8" stroke-width="1.5" />
+          <circle cx="874" cy="131" r="13" fill="#fbbf24" /><text x="870" y="135" class="step">3</text>
+          <text x="896" y="131" class="node-title">Company Job Board</text>
+          <text x="872" y="162" class="node-sub">Public careers pages</text>
+          <text x="872" y="184" class="tiny">company info</text>
+          <text x="872" y="202" class="tiny">job list pages</text>
+        </g>
+
+        <g filter="url(#glow)">
+          <rect x="850" y="340" width="210" height="116" rx="10" fill="#0f172a" />
+          <rect x="850" y="340" width="210" height="116" rx="10" fill="rgba(120,53,15,.32)" stroke="#fbbf24" stroke-width="1.5" />
+          <circle cx="874" cy="366" r="13" fill="#fbbf24" /><text x="870" y="370" class="step">5</text>
+          <text x="896" y="366" class="node-title">Job Detail Pages</text>
+          <text x="872" y="397" class="node-sub">ScrapAI opens each job</text>
+          <text x="872" y="419" class="tiny">description, requirements, remote policy</text>
+        </g>
+
+        <g filter="url(#glow)">
+          <rect x="555" y="588" width="160" height="82" rx="10" fill="#0f172a" />
+          <rect x="555" y="588" width="160" height="82" rx="10" fill="rgba(76,29,149,.48)" stroke="#a78bfa" stroke-width="1.5" />
+          <circle cx="579" cy="614" r="13" fill="#a78bfa" /><text x="575" y="618" class="step">8</text>
+          <text x="601" y="614" class="node-title">JoinRemotes DB</text>
+          <text x="577" y="641" class="node-sub">Companies + Jobs</text>
+        </g>
+
+        <g filter="url(#glow)">
+          <rect x="900" y="505" width="160" height="82" rx="10" fill="#0f172a" />
+          <rect x="900" y="505" width="160" height="82" rx="10" fill="rgba(76,29,149,.48)" stroke="#a78bfa" stroke-width="1.5" />
+          <text x="925" y="535" class="node-title">Public Website</text>
+          <text x="925" y="562" class="node-sub">Fresh company pages</text>
+          <text x="925" y="580" class="tiny">and job listings for users</text>
+        </g>
+
+        <!-- labels -->
+        <text x="306" y="158" class="label">send URL + desired schema</text>
+        <text x="682" y="124" class="label">visit website</text>
+        <text x="666" y="256" class="label">discover job URLs</text>
+        <text x="666" y="336" class="label">open each job</text>
+        <text x="680" y="458" class="label">raw page data</text>
+        <text x="304" y="463" class="label">clean company + jobs JSON</text>
+        <text x="312" y="590" class="label">admin approves import</text>
+        <text x="760" y="606" class="label">publish listings</text>
+
+        <!-- mini contract -->
+        <rect x="58" y="616" width="390" height="94" rx="12" fill="rgba(15,23,42,.86)" stroke="#334155" />
+        <text x="78" y="642" class="node-title">Clean data contract</text>
+        <text x="78" y="668" class="tiny">company: name, website, logo, description, industry, location</text>
+        <text x="78" y="686" class="tiny">jobs: title, apply_url, description, remote_policy, salary, tags</text>
+        <text x="78" y="704" class="tiny">source: original URL + timestamps for dedupe/update</text>
+      </svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <h3><span class="dot cyan"></span>What the admin does</h3>
+        <ul>
+          <li>• Opens JoinRemotes Admin → Scraper</li>
+          <li>• Pastes a job board/careers URL</li>
+          <li>• Reviews the company/jobs ScrapAI found</li>
+          <li>• Approves import into JoinRemotes</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="dot emerald"></span>What ScrapAI does</h3>
+        <ul>
+          <li>• Detects what kind of job board it is</li>
+          <li>• Finds company details and job pages</li>
+          <li>• Extracts messy web pages into structured JSON</li>
+          <li>• Sends results back by API/webhook</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="dot violet"></span>What JoinRemotes gets</h3>
+        <ul>
+          <li>• Company profiles ready to save</li>
+          <li>• Job listings ready to publish</li>
+          <li>• Source URLs for dedupe and updates</li>
+          <li>• A repeatable flow for refreshing listings</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
