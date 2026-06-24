@@ -125,6 +125,10 @@ def crawl_actor(crawl_run_id: int) -> None:
                 "project": project,
             },
         )
+        crawl_service.emit_event(
+            db, "crawl.started", "crawl_run", crawl_run_id,
+            {"spider_name": spider_name, "project": project},
+        )
 
         cmd = [
             sys.executable,
@@ -204,6 +208,10 @@ def crawl_actor(crawl_run_id: int) -> None:
                 },
             )
             _trigger_webhooks(crawl_run, "crawl.failed")
+            crawl_service.emit_event(
+                db, "crawl.failed", "crawl_run", crawl_run_id,
+                {"error": error_msg},
+            )
             return
 
         items_scraped = _count_scraped_items(db, crawl_run_id)
@@ -226,6 +234,12 @@ def crawl_actor(crawl_run_id: int) -> None:
         )
 
         _trigger_webhooks(crawl_run, "crawl.completed")
+        crawl_service.emit_event(
+            db, "crawl.completed", "crawl_run", crawl_run_id,
+            {"items_scraped": items_scraped, "duration_seconds": duration},
+        )
+        from ..services.validation_service import ValidationService
+        ValidationService().generate_report(db, crawl_run_id)
 
     except Exception as e:
         logger.error(f"{log_prefix} Crawl job failed with exception: {e}")

@@ -88,6 +88,77 @@ def _build_crawl_run_response(crawl_run: CrawlRun) -> CrawlRunResponse:
     )
 
 
+class BatchCrawlCreate(BaseModel):
+    """Schema for creating multiple crawl runs in one request."""
+
+    spider_names: List[str] = Field(min_length=1)
+    project: str
+    requested_limit: Optional[int] = Field(None, gt=0, description="Maximum items to scrape per spider")
+
+
+class BatchCrawlRunItem(BaseModel):
+    """Single crawl run entry in a batch response."""
+
+    id: int
+    spider_name: Optional[str] = None
+    status: str
+
+
+class BatchCrawlResponse(BaseModel):
+    """Response for a batch crawl creation."""
+
+    crawl_runs: List[BatchCrawlRunItem]
+
+
+@router.post("/batch", response_model=BatchCrawlResponse)
+async def create_batch_crawl_runs(
+    batch: BatchCrawlCreate,
+    db: Session = Depends(get_db_session),
+    api_key: APIKey = Depends(get_api_key),
+):
+    """Create multiple crawl runs in a single request (max 10 spiders)."""
+    ensure_project_access(api_key, batch.project)
+
+    if len(batch.spider_names) > 10:
+        raise HTTPException(
+            status_code=400,
+            detail="Batch request cannot exceed 10 spiders",
+        )
+
+    crawl_service = CrawlService()
+    created_runs = []
+
+    for spider_name in batch.spider_names:
+        try:
+            crawl_run = crawl_service.create_crawl_run(
+                db=db,
+                spider_name=spider_name,
+                project=batch.project,
+                trigger_source="api",
+                trigger_actor=cast(str, getattr(api_key, "name")),
+                requested_limit=batch.requested_limit,
+                output_mode="db",
+            )
+            enqueue_crawl_job(cast(int, getattr(crawl_run, "id")))
+            created_runs.append(
+                BatchCrawlRunItem(
+                    id=cast(int, getattr(crawl_run, "id")),
+                    spider_name=spider_name,
+                    status="queued",
+                )
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.error(f"Failed to create crawl run for spider {spider_name}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create crawl run for spider '{spider_name}': {str(e)}",
+            )
+
+    return BatchCrawlResponse(crawl_runs=created_runs)
+
+
 @router.post("/", response_model=CrawlRunResponse)
 async def create_crawl_run(
     crawl: CrawlRunCreate,

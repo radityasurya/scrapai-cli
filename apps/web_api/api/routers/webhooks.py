@@ -3,11 +3,11 @@
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import AnyHttpUrl, BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
-from core.models import APIKey
+from core.models import APIKey, WebhookDelivery, WebhookSubscription
 
 from ...services.webhook_service import WebhookService
 from ..deps import get_api_key, get_db_session, resolve_project
@@ -152,3 +152,62 @@ async def delete_webhook_subscription(
         subscription_id=subscription_id,
         message="Webhook subscription deleted",
     )
+
+
+class WebhookDeliveryResponse(BaseModel):
+    """Webhook delivery record response."""
+
+    id: int
+    subscription_id: int
+    event_type: str
+    status: str
+    attempt: Optional[int] = None
+    response_status: Optional[int] = None
+    delivered_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/deliveries", response_model=List[WebhookDeliveryResponse])
+async def list_webhook_deliveries(
+    project: Optional[str] = None,
+    status: Optional[str] = None,
+    event_type: Optional[str] = None,
+    limit: int = Query(50, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db_session),
+    api_key: APIKey = Depends(get_api_key),
+):
+    """List recent webhook delivery records, filterable by status and event_type."""
+    scoped_project = resolve_project(project, api_key)
+
+    query = (
+        db.query(WebhookDelivery)
+        .join(WebhookSubscription, WebhookDelivery.subscription_id == WebhookSubscription.id)
+        .filter(WebhookSubscription.project == scoped_project)
+    )
+
+    if status:
+        query = query.filter(WebhookDelivery.status == status)
+    if event_type:
+        query = query.filter(WebhookDelivery.event_type == event_type)
+
+    deliveries = (
+        query.order_by(WebhookDelivery.created_at.desc()).offset(offset).limit(limit).all()
+    )
+
+    return [
+        WebhookDeliveryResponse(
+            id=delivery.id,
+            subscription_id=delivery.subscription_id,
+            event_type=delivery.event_type,
+            status=delivery.status,
+            attempt=delivery.attempt,
+            response_status=delivery.response_status,
+            delivered_at=delivery.delivered_at,
+            created_at=delivery.created_at,
+        )
+        for delivery in deliveries
+    ]

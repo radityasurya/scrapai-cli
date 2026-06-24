@@ -5,10 +5,12 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
     Text,
+    func,
 )
 from sqlalchemy.orm import relationship
 
@@ -127,6 +129,7 @@ class CrawlRun(Base):
     updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
 
     spider = relationship("Spider", backref="crawl_runs")
+    validation_report = relationship("CrawlValidationReport", back_populates="crawl_run", uselist=False)
 
     @property
     def duration_seconds(self) -> int:
@@ -134,6 +137,33 @@ class CrawlRun(Base):
             delta = self.finished_at - self.started_at
             return int(delta.total_seconds())
         return 0
+
+
+class CrawlValidationReport(Base):
+    __tablename__ = "crawl_validation_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    crawl_run_id = Column(Integer, ForeignKey("crawl_runs.id"), nullable=False, index=True)
+    item_count = Column(Integer, nullable=False, default=0)
+    avg_content_length = Column(Float, nullable=True)
+    fields_missing_rate = Column(Float, nullable=True)  # 0.0-1.0
+    degraded = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    crawl_run = relationship("CrawlRun", back_populates="validation_report")
+
+
+class EventOutbox(Base):
+    __tablename__ = "event_outbox"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_type = Column(String, nullable=False, index=True)
+    aggregate_type = Column(String, nullable=False)
+    aggregate_id = Column(Integer, nullable=False, index=True)
+    payload = Column(JSON, nullable=False)
+    published = Column(Boolean, nullable=False, default=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    published_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class APIKey(Base):

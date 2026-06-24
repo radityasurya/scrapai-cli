@@ -238,3 +238,27 @@ class CrawlService:
         except Exception as e:
             logger.error(f"Failed to get active runs for spider {spider_name}: {e}")
             raise
+
+    def emit_event(
+        self,
+        db: Session,
+        event_type: str,
+        aggregate_type: str,
+        aggregate_id: int,
+        payload: dict,
+    ) -> None:
+        """Write a lifecycle event to the outbox."""
+        try:
+            from core.models import EventOutbox
+
+            entry = EventOutbox(
+                event_type=event_type,
+                aggregate_type=aggregate_type,
+                aggregate_id=aggregate_id,
+                payload=payload,
+            )
+            db.add(entry)
+            db.commit()
+        except Exception as e:
+            logger.error(f"Failed to write event to outbox: {e}")
+            db.rollback()
