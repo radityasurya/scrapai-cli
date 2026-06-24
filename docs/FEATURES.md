@@ -66,7 +66,7 @@ Related docs:
 | Deployment | Coolify deployment | ❌ Missing | Plane item #15 Todo | Needs production compose/build config, secrets, health checks, workers, and migration step. |
 | Config | API env vars and CORS | 🟡 Partial | `.env.example`, `docs/API.md`, Plane item #19 Backlog | Env vars exist; code currently uses permissive wildcard CORS; production allowed-origin policy should be finalized for joinremotes. |
 | DX | TypeScript type generation | ❌ Missing | Plane item #20 Backlog | Useful for joinremotes typed client; currently manual contract docs only. |
-| DX | JoinRemotes integration docs | ✅ Covered | `docs/joinremotes.md`, this file, `docs/JOURNEYS.md` | Repo docs now exist; close or update Plane item #21 after this audit commit is pushed. |
+| DX | JoinRemotes integration docs | ✅ Covered | `docs/joinremotes.md`, this file, `docs/JOURNEYS.md`, Plane item #21 Done | Repo docs and cross-check matrices are present. |
 | Client integration | joinremotes consumer contract | ✅ Covered | `docs/joinremotes.md` | Required metadata fields and webhook contract documented. |
 | Client integration | joinremotes admin source/spider management | 🟡 Partial | API endpoints exist | Need verify actual joinremotes UI routes/client code against this contract. |
 | Client integration | joinremotes crawl/sync flow | 🟡 Partial | `docs/joinremotes.md` | Trigger/poll/webhook/result sync documented; end-to-end production run still needed. |
@@ -89,7 +89,7 @@ Related docs:
 | #18 Test Initial Job Board Spiders via CLI | Backlog | Still requires a real source smoke test. |
 | #19 Add API Environment Variables & CORS Configuration | Backlog | Env vars exist; CORS is still wildcard and needs production policy. |
 | #20 Create TypeScript Type Generator with Git Hooks | Backlog | Missing. |
-| #21 Create JoinRemotes Integration Documentation | Backlog in Plane, covered in repo | Repo docs are now present; tracker should be closed after the audit commit is pushed. |
+| #21 Create JoinRemotes Integration Documentation | Done | Repo docs and cross-check matrices are present. |
 
 ## joinremotes.com required result contract
 
