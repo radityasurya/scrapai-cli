@@ -53,6 +53,7 @@ class SpiderAnalyzeRequest(BaseModel):
     url: str
     project: Optional[str] = None
     use_browser: bool = False
+    prompt_only: bool = False
 
 
 class SpiderInspectRequest(BaseModel):
@@ -159,6 +160,7 @@ async def analyze_spider(
         url=payload.url,
         project=project,
         use_browser=payload.use_browser,
+        prompt_only=payload.prompt_only,
     )
 
     if not result.get("success", True):

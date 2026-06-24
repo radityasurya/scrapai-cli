@@ -183,6 +183,7 @@ class SpiderAnalysisService:
         url: str,
         project: str = "default",
         use_browser: bool = False,
+        prompt_only: bool = False,
     ) -> Dict[str, Any]:
         """
         Analyze a URL and return a suggested spider configuration.
@@ -216,8 +217,8 @@ class SpiderAnalysisService:
             )
         else:
             # Full analysis for unknown sites
-            result = await self._analyze_full(validated_url, project, suggested_name, use_browser)
-            analysis_mode = "full-analysis"
+            result = await self._analyze_full(validated_url, project, suggested_name, use_browser, prompt_only=prompt_only)
+            analysis_mode = "prompt_only" if prompt_only else "full-analysis"
 
         result["analysis_mode"] = analysis_mode
         return result
@@ -313,6 +314,7 @@ class SpiderAnalysisService:
         project: str,
         suggested_name: str,
         use_browser: bool,
+        prompt_only: bool = False,
     ) -> Dict[str, Any]:
         """Full analysis for unknown sites. Uses Claude AI if ANTHROPIC_API_KEY is set."""
         html_content = await self._fetch_html(url, use_browser)
@@ -330,8 +332,8 @@ class SpiderAnalysisService:
         parsed = urlparse(url)
         domain = parsed.netloc.replace("www.", "")
 
-        if os.getenv("ANTHROPIC_API_KEY"):
-            return await self._analyze_with_ai(url, domain, suggested_name, html_content)
+        if prompt_only or os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY"):
+            return await self._analyze_with_ai(url, domain, suggested_name, html_content, prompt_only=prompt_only)
 
         # Fallback: heuristic analysis
         from bs4 import BeautifulSoup
@@ -360,6 +362,7 @@ class SpiderAnalysisService:
         domain: str,
         suggested_name: str,
         html_content: str,
+        prompt_only: bool = False,
     ) -> Dict[str, Any]:
         """Use Claude/GLM to analyze the page and generate a spider config."""
         try:
@@ -386,6 +389,21 @@ class SpiderAnalysisService:
                 company_name=company_name,
                 company_slug=company_slug,
             )
+
+            if prompt_only:
+                return {
+                    "success": True,
+                    "url": url,
+                    "domain": domain,
+                    "suggested_name": suggested_name,
+                    "detected_platform": None,
+                    "confidence_score": 0.0,
+                    "warnings": ["prompt_only mode — paste this prompt into any AI chat to get the config JSON"],
+                    "analysis": {"title": domain, "job_links_detected": 0, "ai_powered": False},
+                    "suggested_config": None,
+                    "prompt": prompt,
+                    "analysis_mode": "prompt_only",
+                }
 
             model = os.getenv("SCRAPAI_ANALYZE_MODEL", "glm-4-flash")
             api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
