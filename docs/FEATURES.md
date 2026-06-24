@@ -23,8 +23,9 @@ Related docs:
 
 ## Current validated baseline
 
-- Branches `main`, `develop`, `origin/main`, and `origin/develop` were aligned before this documentation pass.
-- Test suite baseline: `280 passed, 3 skipped` via `uv run pytest -q`.
+- Last audited against repository code, docs, tests, and Plane on 2026-06-24.
+- API route inventory was verified from the live FastAPI app (`api.main:app`).
+- Test suite baseline: `281 passed, 3 skipped` via `uv run pytest -q`.
 - API/client integration work is primarily for **joinremotes.com**, with ScrapAI expected locally/privately behind `localhost` or Tailscale, not as a public SaaS.
 
 ## Feature matrix
@@ -58,16 +59,37 @@ Related docs:
 | REST API | Results list/query | ✅ Covered | `GET /api/v1/results` | Supports project, spider, crawl run, pagination, URL filter. |
 | REST API | Result by URL | ✅ Covered | `GET /api/v1/results/by-url/` | Useful for dedupe checks. |
 | Webhooks | Webhook subscription API | ✅ Covered | `apps/web_api/api/routers/webhooks.py`, Plane item #17 Done | Create/list/delete subscriptions. |
-| Webhooks | HMAC signed delivery | ✅ Covered | `services/webhook_service.py`, `docs/joinremotes.md` | JoinRemotes should verify raw-body HMAC. |
-| Workers | Redis-backed queue/worker execution | 🟡 Partial | Plane item #1 Backlog, `apps/web_api/workers` | Worker code exists, but orchestration/ops plan remains backlog. |
+| Webhooks | HMAC signed delivery | ✅ Covered | `apps/web_api/workers/webhook_worker.py`, `services/webhook_service.py`, `docs/joinremotes.md` | Active worker sends documented `X-Webhook-*` headers and backward-compatible `X-ScrapAI-*` aliases. |
+| Webhooks | Completed/failed crawl events | ✅ Covered | `apps/web_api/workers/crawl_worker.py` | Terminal crawl events queue `crawl.completed` and `crawl.failed` deliveries with the documented nested payload plus flat compatibility fields. |
+| Workers | Redis-backed queue/worker execution | 🟡 Partial | Plane item #1 Backlog, `apps/web_api/workers` | Code has Redis/Dramatiq crawl + webhook workers with retries; production process orchestration and ops runbook remain backlog. |
 | Rate limiting | API/crawl rate limiting | 🟡 Partial | `RateLimitService`, `docs/API.md`, Plane item #2 Backlog | Redis-backed limits exist; advanced quality/events plan still backlog. |
 | Deployment | Coolify deployment | ❌ Missing | Plane item #15 Todo | Needs production compose/build config, secrets, health checks, workers, and migration step. |
-| Config | API env vars and CORS | 🟡 Partial | `.env.example`, `docs/API.md`, Plane item #19 Backlog | Env vars exist; CORS/client origin policy should be finalized for joinremotes. |
+| Config | API env vars and CORS | 🟡 Partial | `.env.example`, `docs/API.md`, Plane item #19 Backlog | Env vars exist; code currently uses permissive wildcard CORS; production allowed-origin policy should be finalized for joinremotes. |
 | DX | TypeScript type generation | ❌ Missing | Plane item #20 Backlog | Useful for joinremotes typed client; currently manual contract docs only. |
-| DX | JoinRemotes integration docs | 🟡 Partial | `docs/joinremotes.md`, Plane item #21 Backlog | Existing guide is good; this file and `JOURNEYS.md` add coverage tracking. |
+| DX | JoinRemotes integration docs | ✅ Covered | `docs/joinremotes.md`, this file, `docs/JOURNEYS.md` | Repo docs now exist; close or update Plane item #21 after this audit commit is pushed. |
 | Client integration | joinremotes consumer contract | ✅ Covered | `docs/joinremotes.md` | Required metadata fields and webhook contract documented. |
 | Client integration | joinremotes admin source/spider management | 🟡 Partial | API endpoints exist | Need verify actual joinremotes UI routes/client code against this contract. |
 | Client integration | joinremotes crawl/sync flow | 🟡 Partial | `docs/joinremotes.md` | Trigger/poll/webhook/result sync documented; end-to-end production run still needed. |
+
+## Plane cross-check snapshot
+
+| Plane item | Live state | Documentation interpretation |
+| --- | --- | --- |
+| #1 Redis Worker Orchestration Plan | Backlog | Code has Redis/Dramatiq workers, retries, and SSE publishing; production orchestration/runbook is still not done. |
+| #2 Advanced API Quality and Events Plan | Backlog | Rate limiting and basic events exist; advanced quality gates/event coverage remain backlog. |
+| #4 Job Extraction Plan | Done | Job schema and extraction tests are covered. |
+| #7 SSRF validation test coverage plan | Done | URL validation and tests are covered. |
+| #10 API Service Foundation Plan | Done | FastAPI app, auth dependencies, and route foundation are covered. |
+| #12 Add Spider Analysis API Endpoint | Done | Analyze endpoint exists and is tested. |
+| #13 Add Spider Create/Update API Endpoint | Done | Create/update endpoint exists and is tested. |
+| #14 Apply Database Migrations and Create JoinRemotes API Key | Done | Setup/API key path is documented; actual secrets stay outside docs. |
+| #15 Coolify Deployment Configuration | Todo | Deployment remains missing from implementation docs. |
+| #16 Add Spider Delete API Endpoint | Done | Delete/deactivate endpoint exists and is tested. |
+| #17 Add Webhook Subscription API | Done | Subscription CRUD exists and is tested. |
+| #18 Test Initial Job Board Spiders via CLI | Backlog | Still requires a real source smoke test. |
+| #19 Add API Environment Variables & CORS Configuration | Backlog | Env vars exist; CORS is still wildcard and needs production policy. |
+| #20 Create TypeScript Type Generator with Git Hooks | Backlog | Missing. |
+| #21 Create JoinRemotes Integration Documentation | Backlog in Plane, covered in repo | Repo docs are now present; tracker should be closed after the audit commit is pushed. |
 
 ## joinremotes.com required result contract
 

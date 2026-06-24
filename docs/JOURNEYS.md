@@ -17,7 +17,7 @@ Status legend: ✅ covered, 🟡 partial, ❌ missing, ⏸️ deferred.
 | 5 | Admin triggers a crawl | joinremotes admin / cron | ✅ Covered | Produces fresh job listings on demand or on schedule. |
 | 6 | Client observes crawl progress | joinremotes app | 🟡 Partial | Polling is straightforward; SSE needs client wrapper/proxy because of auth headers. |
 | 7 | Client syncs crawl results into joinremotes jobs | joinremotes app | 🟡 Partial | API contract exists; needs live end-to-end verification. |
-| 8 | ScrapAI notifies joinremotes by webhook | ScrapAI worker -> joinremotes app | 🟡 Partial | API and HMAC contract exist; live delivery/retry path should be verified. |
+| 8 | ScrapAI notifies joinremotes by webhook | ScrapAI worker -> joinremotes app | ✅ Covered | Completed/failed terminal events now queue signed webhooks; live delivery still belongs in the E2E smoke test. |
 | 9 | Operator monitors, fixes, and retries failures | ScrapAI operator | 🟡 Partial | Health/reporting exists, but production orchestration is still a next step. |
 | 10 | Developer updates contract safely | ScrapAI + joinremotes devs | ❌ Missing | Generated TS types/OpenAPI checks are not implemented yet. |
 
@@ -35,10 +35,10 @@ Status legend: ✅ covered, 🟡 partial, ❌ missing, ⏸️ deferred.
 | Database migration command | ✅ Covered | `scrapai db migrate`, Alembic | Run before API/worker start in deployment. |
 | API process | ✅ Covered | `uvicorn apps.web_api.api.main:app` / README commands | Ensure bind host is private/local only. |
 | Redis for rate limits, SSE, workers | 🟡 Partial | `.env.example`, `RedisConfig`, docs | Production Redis process and credentials need deployment wiring. |
-| Dramatiq worker processes | 🟡 Partial | `apps/web_api/workers` | Needs supervisor/Coolify process plan. |
+| Dramatiq worker processes | 🟡 Partial | `apps/web_api/workers` | Crawl and webhook actors exist with retries; deployment still needs supervisor/Coolify process wiring. |
 | Private exposure to joinremotes | 🟡 Partial | user deployment preference | Prefer localhost/Tailscale; avoid public ScrapAI endpoint unless intentionally secured. |
 | API key for joinremotes project | ✅ Covered | `scrapai apikey create joinremotes --project joinremotes` | Store key only in joinremotes secrets. |
-| CORS/origin policy | 🟡 Partial | Plane item #19 | Final allowed origins required if browser calls API directly. |
+| CORS/origin policy | 🟡 Partial | Plane item #19 | Code currently uses wildcard CORS; replace with explicit joinremotes/private origins before production browser access. |
 
 ### Cross-check checklist
 
@@ -250,9 +250,10 @@ Start with polling because it works with normal authenticated server-side fetche
 | Create subscription | ✅ Covered | `POST /api/v1/webhooks` | Secret is returned once; save in joinremotes env. |
 | List subscriptions | ✅ Covered | `GET /api/v1/webhooks` | Admin/debug only. |
 | Delete subscription | ✅ Covered | `DELETE /api/v1/webhooks/{id}` | Useful for rotating endpoints. |
-| HMAC signature | ✅ Covered | `X-Webhook-Signature` | Verify against raw body. |
+| Completed/failed event queueing | ✅ Covered | `crawl_worker.py` | `crawl.completed` and `crawl.failed` terminal states queue webhook deliveries. |
+| HMAC signature | ✅ Covered | `X-Webhook-Signature` | Active worker signs the exact compact JSON body it sends; legacy `X-ScrapAI-Signature` alias is also emitted. |
 | Timestamp/event headers | ✅ Covered | `X-Webhook-Timestamp`, `X-Webhook-Event` | Use for replay/event routing. |
-| Delivery retries | 🟡 Partial | `WebhookDelivery` model/worker | Confirm retry/backoff behavior under failure. |
+| Delivery retries | ✅ Covered | Dramatiq `Retries(max_retries=5)` | Worker retries failed/timeout deliveries through Dramatiq; live retry behavior still belongs in the E2E smoke test. |
 | joinremotes endpoint | 🟡 Partial | Contract docs | Must exist as public HMAC-authenticated route. |
 
 ### Cross-check checklist

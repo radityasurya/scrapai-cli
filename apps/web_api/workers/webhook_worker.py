@@ -73,6 +73,7 @@ def webhook_actor(delivery_id: int):
 
         payload = delivery.payload
         payload_str = json.dumps(payload, separators=(",", ":"))
+        timestamp = str(int(datetime.now(timezone.utc).timestamp()))
 
         signature = hmac.new(
             subscription.secret.encode(), payload_str.encode(), hashlib.sha256
@@ -80,8 +81,13 @@ def webhook_actor(delivery_id: int):
 
         headers = {
             "Content-Type": "application/json",
-            "X-ScrapAI-Event": delivery.event_type,
+            "X-Webhook-Signature": f"sha256={signature}",
+            "X-Webhook-Timestamp": timestamp,
+            "X-Webhook-Event": delivery.event_type,
+            "X-Webhook-Delivery": str(delivery.id),
+            # Backward-compatible aliases for any early consumers of the worker.
             "X-ScrapAI-Signature": f"sha256={signature}",
+            "X-ScrapAI-Event": delivery.event_type,
             "X-ScrapAI-Delivery": str(delivery.id),
         }
 

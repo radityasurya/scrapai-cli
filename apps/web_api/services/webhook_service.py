@@ -103,7 +103,7 @@ class WebhookService:
 
         delivery = WebhookDelivery(
             subscription_id=subscription_id,
-            event_type=payload.get("event", "unknown"),
+            event_type=payload.get("event_type") or payload.get("event", "unknown"),
             payload=payload,
             status="pending",
         )

@@ -1,5 +1,8 @@
 """API foundation endpoint tests with dependency overrides."""
 
+import hashlib
+import hmac
+import json
 import os
 import tempfile
 from typing import Generator
@@ -189,3 +192,82 @@ def test_webhook_subscription_crud(api_client):
             db.query(WebhookSubscription).filter(WebhookSubscription.id == subscription_id).first()
         )
         assert subscription is None
+
+
+def test_webhook_worker_sends_documented_headers(api_client, monkeypatch):
+    _, SessionLocal = api_client
+
+    from core.models import WebhookDelivery, WebhookSubscription
+    from apps.web_api.workers import webhook_worker
+
+    with SessionLocal() as db:
+        subscription = WebhookSubscription(
+            project="demo",
+            target_url="https://example.com/webhooks/scrapai",
+            event_types=["crawl.completed"],
+            secret="secret-value",
+            active=True,
+        )
+        db.add(subscription)
+        db.commit()
+        db.refresh(subscription)
+
+        payload = {
+            "event": "crawl.completed",
+            "event_type": "crawl.completed",
+            "timestamp": "2026-06-24T00:00:00+00:00",
+            "data": {"crawl_run_id": 123, "project": "demo"},
+        }
+        delivery = WebhookDelivery(
+            subscription_id=subscription.id,
+            event_type="crawl.completed",
+            payload=payload,
+            status="pending",
+        )
+        db.add(delivery)
+        db.commit()
+        db.refresh(delivery)
+        delivery_id = int(getattr(delivery, "id"))
+
+    captured = {}
+
+    class FakeResponse:
+        status_code = 204
+        text = ""
+
+    class FakeClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url, content, headers):
+            captured["url"] = url
+            captured["content"] = content
+            captured["headers"] = headers
+            return FakeResponse()
+
+    monkeypatch.setattr(webhook_worker, "SessionLocal", SessionLocal)
+    monkeypatch.setattr(webhook_worker.httpx, "Client", FakeClient)
+
+    webhook_worker.webhook_actor.fn(delivery_id)
+
+    body = json.dumps(payload, separators=(",", ":"))
+    expected_signature = hmac.new(
+        b"secret-value", body.encode(), hashlib.sha256
+    ).hexdigest()
+
+    assert captured["url"] == "https://example.com/webhooks/scrapai"
+    assert captured["content"] == body
+    assert captured["headers"]["X-Webhook-Signature"] == f"sha256={expected_signature}"
+    assert captured["headers"]["X-Webhook-Event"] == "crawl.completed"
+    assert captured["headers"]["X-Webhook-Timestamp"]
+    assert captured["headers"]["X-ScrapAI-Signature"] == f"sha256={expected_signature}"
+
+    with SessionLocal() as db:
+        stored = db.query(WebhookDelivery).filter(WebhookDelivery.id == delivery_id).first()
+        assert stored.status == "delivered"

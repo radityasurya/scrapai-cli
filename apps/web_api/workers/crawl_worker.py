@@ -173,7 +173,7 @@ def crawl_actor(crawl_run_id: int) -> None:
             error_msg = stderr.decode("utf-8", errors="replace")[-2000:]
             logger.error(f"Crawl job {crawl_run_id} failed: {error_msg}")
             assert crawl_service is not None
-            crawl_service.update_crawl_run_status(
+            crawl_run = crawl_service.update_crawl_run_status(
                 db, crawl_run_id, "failed", error_message=error_msg
             )
             publish_sse_event(
@@ -185,6 +185,7 @@ def crawl_actor(crawl_run_id: int) -> None:
                     "duration_seconds": duration,
                 },
             )
+            _trigger_webhooks(crawl_run, "crawl.failed")
             return
 
         items_scraped = _count_scraped_items(db, crawl_run_id)
@@ -206,7 +207,7 @@ def crawl_actor(crawl_run_id: int) -> None:
             },
         )
 
-        _trigger_webhooks(crawl_run)
+        _trigger_webhooks(crawl_run, "crawl.completed")
 
     except Exception as e:
         logger.error(f"Crawl job {crawl_run_id} failed with exception: {e}")
@@ -244,32 +245,42 @@ def _count_scraped_items(db: Any, crawl_run_id: int) -> int:
     return count or 0
 
 
-def _trigger_webhooks(crawl_run: Any) -> None:
-    """Trigger webhook notifications for completed crawl."""
+def _trigger_webhooks(crawl_run: Any, event_type: str) -> None:
+    """Trigger webhook notifications for a terminal crawl event."""
     try:
         webhook_service = WebhookService()
         db = SessionLocal()
 
         try:
             webhooks = webhook_service.get_active_webhooks(
-                db, crawl_run.project, event_type="crawl.completed"
+                db, crawl_run.project, event_type=event_type
             )
 
             for webhook in webhooks:
                 webhook_id = int(webhook.id) if webhook.id else None
                 if webhook_id is None:
                     continue
+                timestamp = datetime.now(timezone.utc).isoformat()
+                data = {
+                    "crawl_run_id": crawl_run.id,
+                    "project": crawl_run.project,
+                    "spider_name": crawl_run.spider.name if crawl_run.spider else None,
+                    "status": crawl_run.status,
+                    "items_scraped": crawl_run.items_scraped,
+                    "duration_seconds": crawl_run.duration_seconds,
+                    "error_message": crawl_run.error_message,
+                }
                 webhook_service.queue_webhook_delivery(
                     db,
                     webhook_id,
                     {
-                        "event": "crawl.completed",
-                        "crawl_run_id": crawl_run.id,
-                        "project": crawl_run.project,
-                        "spider_name": crawl_run.spider.name if crawl_run.spider else None,
-                        "status": crawl_run.status,
-                        "items_scraped": crawl_run.items_scraped,
-                        "duration_seconds": crawl_run.duration_seconds,
+                        "event": event_type,
+                        "event_type": event_type,
+                        "timestamp": timestamp,
+                        "data": data,
+                        # Keep top-level fields for early integrations that consumed
+                        # the pre-contract payload directly.
+                        **data,
                     },
                 )
         finally:
