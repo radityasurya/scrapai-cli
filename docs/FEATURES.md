@@ -29,6 +29,25 @@ Related docs:
 - Test suite baseline: `281 passed, 3 skipped` via `uv run pytest -q`.
 - API/client integration work is primarily for **joinremotes.com**, with ScrapAI expected locally/privately behind `localhost` or Tailscale, not as a public SaaS.
 
+## Codebase ownership map
+
+| Feature / journey | Primary codebase | Supporting codebase | Current status | Where to work next |
+| --- | --- | --- | --- | --- |
+| Admin Scraper UI route and screens | `joinremotes.com` | `scrapai-cli` APIs | ✅ Live skeleton, 🟡 product polish | `joinremotes.com/app/admin/integrations/scrapai` |
+| URL input + analyze action | `joinremotes.com` | `scrapai-cli` analyze endpoint | ✅ Live | JoinRemotes UI polish; ScrapAI only if analysis response needs more data. |
+| Suggested scrape structure | `scrapai-cli` | `joinremotes.com` preview UI | 🟡 Partial | ScrapAI for extraction quality; JoinRemotes for readable preview/edit UI. |
+| Save source spider | Both | — | ✅ Live | JoinRemotes proxy route + ScrapAI spider API. |
+| Source list/detail pages | `joinremotes.com` | `scrapai-cli` list/get APIs | ✅ Live | JoinRemotes UI. |
+| Trigger crawl | Both | — | ✅ Live | JoinRemotes action + ScrapAI crawl API/worker. |
+| Crawl progress stream | Both | Redis/worker runtime | 🟡 Partial | ScrapAI for worker/Redis reliability; JoinRemotes for display polish. |
+| Import companies/jobs | `joinremotes.com` | `scrapai-cli` results API | ✅ Basic sync live, 🟡 field-quality validation | `joinremotes.com/lib/scrapai/sync.ts`; run real source smoke tests. |
+| Public company/job pages | `joinremotes.com` | — | ✅ Existing app pages | JoinRemotes only. |
+| Webhook delivery | `scrapai-cli` | `joinremotes.com` webhook route | 🟡 Partial | ScrapAI emits signed terminal events; JoinRemotes should add/verify receiver if using webhook-triggered sync. |
+| Worker orchestration/deployment | `scrapai-cli` | JoinRemotes env values | 🟡 Partial | ScrapAI Plane #1/#2/#15/#19. |
+| Type generation/contracts | Both | — | ❌ Missing | ScrapAI OpenAPI/TS export + JoinRemotes generated types. |
+
+Cross-repo reference: JoinRemotes keeps its local ownership doc at `/home/tama/projects/joinremotes.com/docs/SCRAPAI-INTEGRATION.md`.
+
 ## Feature matrix
 
 | Area | Feature | Status | Evidence / source | Notes / gaps |
