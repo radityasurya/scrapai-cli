@@ -23,6 +23,8 @@ Analyze the HTML below from a job board and generate a production-ready Scrapy s
 
 URL: {url}
 Domain: {domain}
+Company name: {company_name}
+Company slug: {company_slug}
 
 HTML (condensed):
 {html}
@@ -35,26 +37,40 @@ Return ONLY valid JSON with this exact structure:
   "start_urls": ["{url}"],
   "rules": [
     {{
-      "allow": ["<regex pattern matching job listing pages>"],
+      "allow": ["<regex matching the listing page URL — must match {url}>"],
       "callback": "parse_listing",
-      "follow": true
-    }},
-    {{
-      "allow": ["<regex pattern matching individual job pages>"],
-      "callback": "parse_job",
       "follow": false
     }}
   ],
   "callbacks": {{
-    "parse_job": {{
+    "parse_listing": {{
       "extract": {{
-        "job_title": {{"css": "<selector>::text"}},
-        "company": {{"css": "<selector>::text"}},
-        "location": {{"css": "<selector>::text"}},
-        "salary": {{"css": "<selector>::text"}},
+        "source_job_id": {{
+          "css": "a::attr(href)",
+          "processors": [{{"type": "regex", "pattern": "<regex with one capture group extracting a stable job ID from job link hrefs — numeric ID, UUID, or last path segment>"}}]
+        }}
+      }},
+      "iterate": {{
+        "selector": "<CSS selector matching each repeating job card or row element on the listing page>",
+        "follow": {{
+          "url": {{"css": "a::attr(href)"}},
+          "callback": "parse_job_detail"
+        }},
+        "url_context": {{
+          "company_slug": {{"regex": "<regex with one capture group extracting the company identifier from the listing URL — e.g. subdomain or path segment>"}}
+        }}
+      }}
+    }},
+    "parse_job_detail": {{
+      "extract": {{
+        "title": {{"css": "<selector>::text", "processors": [{{"type": "strip"}}]}},
+        "company": {{
+          "xpath": "//no-match-placeholder",
+          "processors": [{{"type": "default", "default": "{company_name}"}}]
+        }},
         "description": {{"css": "<selector>"}},
-        "posted_date": {{"css": "<selector>::text"}},
-        "tags": {{"css": "<selector>::text", "get_all": true}}
+        "location": {{"css": "<selector>::text", "processors": [{{"type": "strip"}}]}},
+        "department": {{"css": "<selector>::text", "processors": [{{"type": "strip"}}]}}
       }}
     }}
   }},
@@ -70,151 +86,91 @@ Return ONLY valid JSON with this exact structure:
   }}
 }}
 
-Rules for selectors:
+Rules:
+- iterate.selector: CSS selector for the repeating job card/row container on the listing page
+- source_job_id: regex must have exactly ONE capture group; match numeric IDs, UUIDs, or the last non-empty path segment
+- company_slug regex: must have exactly ONE capture group; match the company identifier in the listing URL
 - Use ::text for text content, ::attr(href) for links
-- Prefer specific class selectors over generic tags
-- If a field is not present on this page type, omit it
-- If the page is a listing page (not a job detail), focus rules on pagination and job link patterns
-- Only include fields you can actually see in the HTML"""
+- If location or department are not visible in the HTML, use: {{"xpath": "//no-match-placeholder", "processors": [{{"type": "default", "default": ""}}]}}
+- Only include fields you can actually observe in the HTML structure"""
 
 
-# ATS Platform definitions with URL patterns and template configs
+# ATS Platform definitions — iterate-based configs with url_context for slug generation
 ATS_PLATFORMS = {
     "greenhouse": {
-        "url_patterns": [r"job-boards\.greenhouse\.io", r"greenhouse\.io"],
-        "job_url_pattern": r"/jobs/(\d+)",
-        "template": {
-            "rules": [
-                {
-                    "allow": [r"/jobs/\d+$"],
-                    "deny": [],
-                    "callback": "parse_job",
-                    "follow": False,
-                    "priority": 10,
-                }
-            ],
-            "callbacks": {
-                "parse_job": {
-                    "extract": {
-                        "title": {"css": "h1.job-title::text"},
-                        "location": {"css": "span.location::text"},
-                        "department": {"css": "span.department::text"},
-                        "description": {"css": "div#content", "get_all": True},
-                        "apply_url": {"css": "a.apply-button::attr(href)"},
-                    }
-                }
-            },
-            "settings": {"DOWNLOAD_DELAY": 1.0, "CONCURRENT_REQUESTS": 2},
+        "url_patterns": [r"job-boards\.greenhouse\.io", r"boards\.greenhouse\.io"],
+        "company_slug_regex": r"greenhouse\.io/([^/?]+)",
+        "listing_allow": r"greenhouse\.io/{company_slug}$",
+        "iterate_selector": "tr.job-post",
+        "source_job_id_regex": r"/jobs/(\d+)",
+        "url_context_regex": r"greenhouse\.io/([^/?]+)",
+        "detail_selectors": {
+            "title": {"css": "h1.section-header::text", "processors": [{"type": "strip"}]},
+            "description": {"css": "div.job__description"},
+            "location": {"css": "div.job__location div::text", "processors": [{"type": "strip"}]},
+            "department": {"xpath": "//no-match-placeholder", "processors": [{"type": "default", "default": ""}]},
         },
-        "fields": ["title", "location", "department", "description", "apply_url"],
+        "settings": {"DOWNLOAD_DELAY": 1.0, "CONCURRENT_REQUESTS": 2},
     },
     "personio": {
         "url_patterns": [r"jobs\.personio\.com", r"\.jobs\.personio\.com"],
-        "job_url_pattern": r"job_id=([^&]+)",
-        "template": {
-            "rules": [
-                {
-                    "allow": [r"\?job_id="],
-                    "deny": [],
-                    "callback": "parse_job",
-                    "follow": False,
-                    "priority": 10,
-                }
-            ],
-            "callbacks": {
-                "parse_job": {
-                    "extract": {
-                        "title": {"css": "h1::text"},
-                        "location": {"css": "span.job-location::text"},
-                        "department": {"css": "span.job-department::text"},
-                        "description": {"css": "div.job-description", "get_all": True},
-                        "employment_type": {"css": "span.employment-type::text"},
-                    }
-                }
-            },
-            "settings": {"DOWNLOAD_DELAY": 1.0, "CONCURRENT_REQUESTS": 2},
+        "company_slug_regex": r"://([^.]+)\.jobs\.personio\.com",
+        "listing_allow": r"{company_slug}\.jobs\.personio\.com",
+        "iterate_selector": "a.job-box",
+        "source_job_id_regex": r"/job/(\d+)",
+        "url_context_regex": r"://([^.]+)\.jobs\.personio\.com",
+        "detail_selectors": {
+            "title": {"css": "h1.detail-title::text", "processors": [{"type": "strip"}]},
+            "description": {"css": "div.detail-content-block-conditions"},
+            "location": {"css": "div.JobAttributes_jobMetaItemLocation__MX4Xg span::text", "processors": [{"type": "strip"}]},
+            "department": {"xpath": "//no-match-placeholder", "processors": [{"type": "default", "default": ""}]},
         },
-        "fields": ["title", "location", "department", "description", "employment_type"],
+        "settings": {"DOWNLOAD_DELAY": 1.0, "CONCURRENT_REQUESTS": 2},
     },
     "lever": {
-        "url_patterns": [r"lever\.co", r"\.lever\.co"],
-        "job_url_pattern": r"/postings/([^/?]+)",
-        "template": {
-            "rules": [
-                {
-                    "allow": [r"/postings/[\w-]+$"],
-                    "deny": [],
-                    "callback": "parse_job",
-                    "follow": False,
-                    "priority": 10,
-                }
-            ],
-            "callbacks": {
-                "parse_job": {
-                    "extract": {
-                        "title": {"css": "h1::text"},
-                        "location": {"css": "span.location::text"},
-                        "department": {"css": "span.department::text"},
-                        "description": {"css": "div.job-description", "get_all": True},
-                        "apply_url": {"css": "a.apply-button::attr(href)"},
-                    }
-                }
-            },
-            "settings": {"DOWNLOAD_DELAY": 1.0, "CONCURRENT_REQUESTS": 2},
+        "url_patterns": [r"jobs\.lever\.co"],
+        "company_slug_regex": r"lever\.co/([^/?]+)",
+        "listing_allow": r"lever\.co/{company_slug}$",
+        "iterate_selector": "div.posting",
+        "source_job_id_regex": r"/postings/([a-f0-9-]{36})",
+        "url_context_regex": r"lever\.co/([^/?]+)",
+        "detail_selectors": {
+            "title": {"css": "h2::text", "processors": [{"type": "strip"}]},
+            "description": {"css": "div.posting-description"},
+            "location": {"css": "div.location::text", "processors": [{"type": "strip"}]},
+            "department": {"css": "div.team::text", "processors": [{"type": "strip"}]},
         },
-        "fields": ["title", "location", "department", "description", "apply_url"],
+        "settings": {"DOWNLOAD_DELAY": 1.0, "CONCURRENT_REQUESTS": 2},
     },
     "workable": {
-        "url_patterns": [r"workable\.com", r"\.workable\.com"],
-        "job_url_pattern": r"/jobs/([^/?]+)",
-        "template": {
-            "rules": [
-                {
-                    "allow": [r"/jobs/[\w-]+$"],
-                    "deny": [],
-                    "callback": "parse_job",
-                    "follow": False,
-                    "priority": 10,
-                }
-            ],
-            "callbacks": {
-                "parse_job": {
-                    "extract": {
-                        "title": {"css": "h1::text"},
-                        "location": {"css": "span.location::text"},
-                        "description": {"css": "div.job-description", "get_all": True},
-                    }
-                }
-            },
-            "settings": {"DOWNLOAD_DELAY": 1.0, "CONCURRENT_REQUESTS": 2},
+        "url_patterns": [r"apply\.workable\.com"],
+        "company_slug_regex": r"workable\.com/([^/?]+)",
+        "listing_allow": r"workable\.com/{company_slug}",
+        "iterate_selector": "li.jobs-list-section__item",
+        "source_job_id_regex": r"/jobs/([^/?]+)",
+        "url_context_regex": r"workable\.com/([^/?]+)",
+        "detail_selectors": {
+            "title": {"css": "h1::text", "processors": [{"type": "strip"}]},
+            "description": {"css": "div.job-description"},
+            "location": {"css": "span.location::text", "processors": [{"type": "strip"}]},
+            "department": {"xpath": "//no-match-placeholder", "processors": [{"type": "default", "default": ""}]},
         },
-        "fields": ["title", "location", "description"],
+        "settings": {"DOWNLOAD_DELAY": 1.0, "CONCURRENT_REQUESTS": 2},
     },
     "ashby": {
-        "url_patterns": [r"ashbyhq\.com", r"\.ashbyhq\.com"],
-        "job_url_pattern": r"/jobs/([^/?]+)",
-        "template": {
-            "rules": [
-                {
-                    "allow": [r"/jobs/[\w-]+$"],
-                    "deny": [],
-                    "callback": "parse_job",
-                    "follow": False,
-                    "priority": 10,
-                }
-            ],
-            "callbacks": {
-                "parse_job": {
-                    "extract": {
-                        "title": {"css": "h1::text"},
-                        "location": {"css": "span.location::text"},
-                        "description": {"css": "div.job-description", "get_all": True},
-                    }
-                }
-            },
-            "settings": {"DOWNLOAD_DELAY": 1.0, "CONCURRENT_REQUESTS": 2},
+        "url_patterns": [r"jobs\.ashbyhq\.com"],
+        "company_slug_regex": r"ashbyhq\.com/([^/?]+)",
+        "listing_allow": r"ashbyhq\.com/{company_slug}$",
+        "iterate_selector": "a[class*='_container_']",
+        "source_job_id_regex": r"/[^/]+/([a-f0-9-]{36})",
+        "url_context_regex": r"ashbyhq\.com/([^/?]+)",
+        "detail_selectors": {
+            "title": {"css": "h1.ashby-job-posting-heading::text", "processors": [{"type": "strip"}]},
+            "description": {"css": "div.ashby-job-posting-brief-description"},
+            "location": {"css": "div.ashby-job-posting-brief-details p::text", "processors": [{"type": "strip"}]},
+            "department": {"xpath": "//no-match-placeholder", "processors": [{"type": "default", "default": ""}]},
         },
-        "fields": ["title", "location", "description"],
+        "settings": {"DOWNLOAD_DELAY": 1.5, "CONCURRENT_REQUESTS": 1, "CLOUDFLARE_ENABLED": True},
     },
 }
 
@@ -284,30 +240,56 @@ class SpiderAnalysisService:
         suggested_name: str,
         platform: str,
     ) -> Dict[str, Any]:
-        """Generate config using ATS template."""
+        """Generate config using ATS template with iterate+url_context structure."""
         platform_config = ATS_PLATFORMS[platform]
-        template = platform_config["template"]
 
         parsed = urlparse(url)
         domain = parsed.netloc.replace("www.", "")
 
-        # Build suggested config from template
+        # Extract company slug from the URL
+        company_slug_match = re.search(platform_config["company_slug_regex"], url)
+        company_slug = company_slug_match.group(1) if company_slug_match else re.sub(r"[^a-z0-9]+", "-", domain.split(".")[0].lower()).strip("-")
+        # Derive company name from the slug (e.g. "stripe" → "Stripe"), not the platform domain
+        company_name = company_slug.replace("-", " ").title()
+
+        listing_allow = platform_config["listing_allow"].replace("{company_slug}", re.escape(company_slug))
+
         config = {
             "name": suggested_name,
             "allowed_domains": [domain],
             "start_urls": [url],
             "source_url": url,
-            "rules": template.get("rules", []),
-            "callbacks": template.get("callbacks", {}),
-            "settings": template.get("settings", {}),
+            "rules": [
+                {"allow": [listing_allow], "callback": "parse_listing", "follow": False}
+            ],
+            "callbacks": {
+                "parse_listing": {
+                    "extract": {
+                        "source_job_id": {
+                            "css": "a::attr(href)",
+                            "processors": [{"type": "regex", "pattern": platform_config["source_job_id_regex"]}],
+                        }
+                    },
+                    "iterate": {
+                        "selector": platform_config["iterate_selector"],
+                        "follow": {"url": {"css": "a::attr(href)"}, "callback": "parse_job_detail"},
+                        "url_context": {
+                            "company_slug": {"regex": platform_config["url_context_regex"]}
+                        },
+                    },
+                },
+                "parse_job_detail": {
+                    "extract": {
+                        **platform_config["detail_selectors"],
+                        "company": {
+                            "xpath": "//no-match-placeholder",
+                            "processors": [{"type": "default", "default": company_name}],
+                        },
+                    }
+                },
+            },
+            "settings": platform_config.get("settings", {}),
         }
-
-        # Count job links (basic estimate)
-        job_links_detected = 1  # Template assumes job listing page
-
-        # Calculate confidence
-        confidence_score = 0.95  # High confidence for known ATS
-        warnings = []
 
         return {
             "success": True,
@@ -315,13 +297,12 @@ class SpiderAnalysisService:
             "domain": domain,
             "suggested_name": suggested_name,
             "detected_platform": platform,
-            "confidence_score": confidence_score,
-            "warnings": warnings,
+            "confidence_score": 0.95,
+            "warnings": [],
             "analysis": {
                 "title": f"{platform.title()} Job Board",
-                "job_links_detected": job_links_detected,
-                "expected_fields": platform_config.get("fields", []),
-                "job_url_pattern": platform_config.get("job_url_pattern"),
+                "job_links_detected": 1,
+                "company_slug": company_slug,
             },
             "suggested_config": config,
         }
@@ -396,11 +377,14 @@ class SpiderAnalysisService:
                 f"=== HTML STRUCTURE ===\n{html_structure}"
             )
 
+            company_name, company_slug = self._derive_company_from_domain(domain)
             prompt = _ANALYZE_PROMPT.format(
                 url=url,
                 domain=domain,
                 suggested_name=suggested_name,
                 html=combined,
+                company_name=company_name,
+                company_slug=company_slug,
             )
 
             model = os.getenv("SCRAPAI_ANALYZE_MODEL", "glm-4-flash")
@@ -569,6 +553,11 @@ class SpiderAnalysisService:
         if not job_patterns:
             job_patterns = ["/job/.*"]
 
+        company_name, company_slug = self._derive_company_from_domain(domain)
+        # Derive a generic source_job_id pattern: last non-empty path segment
+        source_job_id_regex = r"/([^/?#]+)/?$"
+        url_context_regex = re.escape(domain) + r"(?:/[^/?]+)?"
+
         return {
             "name": suggested_name,
             "allowed_domains": [domain],
@@ -576,20 +565,41 @@ class SpiderAnalysisService:
             "source_url": url,
             "rules": [
                 {
-                    "allow": job_patterns[:3],  # Limit to top 3 patterns
+                    "allow": [re.escape(urlparse(url).path.rstrip("/")) + r"$"],
                     "deny": [],
-                    "callback": "parse_job",
-                    "follow": True,
+                    "callback": "parse_listing",
+                    "follow": False,
                     "priority": 10,
                 }
             ],
             "callbacks": {
-                "parse_job": {
+                "parse_listing": {
                     "extract": {
-                        "title": {"css": "h1::text"},
-                        "description": {"css": "body", "get_all": True},
+                        "source_job_id": {
+                            "css": "a::attr(href)",
+                            "processors": [{"type": "regex", "pattern": source_job_id_regex}],
+                        }
+                    },
+                    "iterate": {
+                        "selector": "a[href]",
+                        "follow": {"url": {"css": "::attr(href)"}, "callback": "parse_job_detail"},
+                        "url_context": {
+                            "company_slug": {"regex": url_context_regex.replace(re.escape(domain), re.escape(company_slug))}
+                        },
+                    },
+                },
+                "parse_job_detail": {
+                    "extract": {
+                        "title": {"css": "h1::text", "processors": [{"type": "strip"}]},
+                        "company": {
+                            "xpath": "//no-match-placeholder",
+                            "processors": [{"type": "default", "default": company_name}],
+                        },
+                        "description": {"css": "body"},
+                        "location": {"xpath": "//no-match-placeholder", "processors": [{"type": "default", "default": ""}]},
+                        "department": {"xpath": "//no-match-placeholder", "processors": [{"type": "default", "default": ""}]},
                     }
-                }
+                },
             },
             "settings": {"DOWNLOAD_DELAY": 1.5, "CONCURRENT_REQUESTS": 1},
         }
@@ -629,3 +639,20 @@ class SpiderAnalysisService:
             warnings.append("Low confidence - manual review and adjustment required")
 
         return warnings
+
+    @staticmethod
+    def _derive_company_from_domain(domain: str) -> tuple:
+        """Return (company_name, company_slug) derived from a domain.
+
+        careers.bol.com → ("Bol", "bol")
+        boards.greenhouse.io → ("Greenhouse", "greenhouse")
+        """
+        host = domain.lower()
+        for prefix in ("careers.", "jobs.", "job.", "apply.", "work.", "boards.", "hiring."):
+            if host.startswith(prefix):
+                host = host[len(prefix):]
+                break
+        core = host.split(".")[0]
+        slug = re.sub(r"[^a-z0-9]+", "-", core).strip("-") or "company"
+        name = core.replace("-", " ").title()
+        return name, slug
